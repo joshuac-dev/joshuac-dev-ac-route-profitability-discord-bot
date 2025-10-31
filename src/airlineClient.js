@@ -19,6 +19,7 @@ const BASE_INFLIGHT_COST = 20;
 // Constants for our simulation
 const DEFAULT_LOAD_FACTOR = 1.0; // Per spec, "Assume 100% economy seats sold"
 const DEFAULT_QUALITY = 60; // 3-star, a reasonable default
+const MINUTES_PER_WEEK = 10080;
 
 // From "Airport Fees (AFPF)" section
 const airplaneTypeMultiplierMap = {
@@ -85,7 +86,7 @@ export async function fetchAirports(client) {
 }
 
 /**
- * Fetches the master list of all airplane models and their base stats.
+ * (NEW) Fetches the master list of all airplane models and their base stats.
  */
 export async function fetchAirplaneModels(client) {
     console.log('[API] Fetching global airplane model list...');
@@ -178,6 +179,7 @@ function calculateAirportFees(capacity, airplaneType, fromAirport, toAirport, ba
 
     const getSlotFee = (airport) => {
         const baseFee = baseSlotFees[Math.min(airport.size, 7)];
+        // Check if IATA is in our baselist
         const discount = baseAirports[airport.iata] ? 0.8 : 1.0; // 20% base discount (HQ 50% is TODO)
         return baseFee * typeMultiplier * discount;
     };
@@ -191,20 +193,9 @@ function calculateAirportFees(capacity, airplaneType, fromAirport, toAirport, ba
     const toSlotFee = getSlotFee(toAirport);
     const fromLandingFee = getLandingFee(fromAirport);
     const toLandingFee = getLandingFee(toAirport);
-
-    // This is the fee for ONE flight (one takeoff, one landing)
-    const feePerFlight = fromSlotFee + toSlotFee + fromLandingFee + toLandingFee;
     
-    // Per the docs, AFPF = (from + to fees) * freq. This implies per round-trip.
-    // Let's check the docs again. "All costs are calculated **per flight**"
-    // "AFPF = (fromAirport.slotFee + toAirport.slotFee + fromAirport.landingFee + toAirport.landingFee) × frequency"
-    // This formula seems to be for a one-way flight, but that doesn't make sense.
-    // Let's stick to the logic: one round-trip = 2x(slot + landing).
-    // A single flight (one-way) is 1x(slot-from + landing-to).
-    // A round trip is (slot-from + landing-to) + (slot-to + landing-from).
-    // This is exactly `feePerFlight`.
-    // So, `feePerFlight * frequency` is the correct weekly cost for F round-trips.
-    return feePerFlight * frequency;
+    const feePerRoundTrip = fromSlotFee + toSlotFee + fromLandingFee + toLandingFee;
+    return feePerRoundTrip * frequency;
 }
 
 /**
@@ -264,7 +255,7 @@ export function analyzeRoute(routeData, userPlaneList, airplaneModelMap, airport
 
     if (isDebug) {
          console.log(`  [DEBUG] Matching against ${userPlaneIds.size} IDs: [${[...userPlaneIds].join(', ')}]`);
-         console.log(`  [DEBUG] Matching against ${userPlaneNames.size} names: ["${[...userPlaneNames].join('", "')}"]`);
+         console.log(`  [DEBUG] Matching against ${userPlaneNames.size} names: ["${[...userPlaneNames.join('", "')}"]`);
     }
 
     const viablePlanes = routeData.modelPlanLinkInfo.filter(model => {
@@ -317,11 +308,13 @@ export function analyzeRoute(routeData, userPlaneList, airplaneModelMap, airport
             continue;
         }
 
-        // --- (THIS IS THE FIX) ---
+        // --- (THE FIX) ---
         // Use the route-specific frequency and duration provided by the plan-link API
-        const F = plane.maxFrequency; // The CORRECT max frequency (e.g., 16)
-        const C = plane.capacity; // The CORRECT capacity for this route (e.g., 40)
-        const durationMinutes = plane.duration; // The CORRECT one-way duration (e.g., 118)
+        // This was the error in the previous step. We must use the API's provided
+        // flight times, not recalculate them.
+        const F = plane.maxFrequency;
+        const C = plane.capacity;
+        const durationMinutes = plane.duration; // One-way flight time in minutes
         // --- (END FIX) ---
 
         if (F === 0) {
@@ -329,8 +322,8 @@ export function analyzeRoute(routeData, userPlaneList, airplaneModelMap, airport
             continue;
         }
 
-        [cite_start]// "100% economy seats sold" [cite: 22] implies 100% load factor on the all-economy capacity
-        const soldSeats = Math.floor(C * DEFAULT_LOAD_FACTOR);
+        // Per spec: "Assume 100% economy seats sold"
+        const soldSeats = C; 
         
         const fuelCost = calculateFuelCost(routeData.distance, planeBaseStats.fuelBurn, F, DEFAULT_LOAD_FACTOR);
         const crewCost = calculateCrewCost(C, durationMinutes, F);
@@ -341,9 +334,7 @@ export function analyzeRoute(routeData, userPlaneList, airplaneModelMap, airport
 
         const totalWeeklyCost = fuelCost + crewCost + airportFees + depreciation + maintenance + serviceSupplies;
         
-        // Revenue is based on sold seats (as per load factor)
-        [cite_start]// Per spec[cite: 21], REVENUE = ticketPrice * F * C. This implies 100% load factor.
-        // Let's follow that.
+        // Per spec: REVENUE = ticketPrice * F * C
         const REVENUE = ticketPrice * F * C;
         const PROFIT = REVENUE - totalWeeklyCost;
         const SCORE = Math.round(PROFIT / F);
