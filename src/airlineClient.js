@@ -4,6 +4,16 @@ import { CookieJar } from 'tough-cookie';
 
 const BASE_URL = 'https://www.airline-club.com';
 
+// --- (NEW) Cost Calculation Constants ---
+// These are standard assumptions based on game mechanics.
+const FUEL_PRICE = 1; // $1 per kg (this can be refined later if we fetch fuel price)
+const CREW_COST_PER_MINUTE = 1.5; // Estimated cost per minute of flight time
+const AIRPORT_FEE_PER_FLIGHT = 5500; // Estimated avg airport fee (landing + takeoff)
+const SERVICE_SUPPLY_COST_PER_PAX = 6; // Estimated cost per passenger
+const MAINTENANCE_COST_PER_MINUTE = 15; // Estimated cost per minute of flight time
+// --- (END NEW) ---
+
+
 /**
  * Creates a new, sandboxed API client instance with its own cookie jar.
  */
@@ -20,20 +30,11 @@ function createApiClient() {
  */
 export async function login(client, username, password) {
     const credentials = Buffer.from(`${username}:${password}`).toString('base64');
-    
     console.log(`[API] Attempting login for ${username}...`);
-    
     try {
-        const response = await client.post(
-            `${BASE_URL}/login`,
-            {}, 
-            {
-                headers: {
-                    'Authorization': `Basic ${credentials}`
-                }
-            }
-        );
-        
+        const response = await client.post(`${BASE_URL}/login`, {}, {
+            headers: { 'Authorization': `Basic ${credentials}` }
+        });
         if (response.data && response.data.airlineIds && response.data.airlineIds.length > 0) {
             console.log(`[API] Login successful. Got airlineId: ${response.data.airlineIds[0]}`);
             return response.data.airlineIds[0];
@@ -62,6 +63,27 @@ export async function fetchAirports(client) {
 }
 
 /**
+ * Fetches the master list of all airplane models and their base stats.
+ */
+export async function fetchAirplaneModels(client) {
+    console.log('[API] Fetching global airplane model list...');
+    try {
+        // This is the endpoint you uncovered in `airplane-models Response.txt`
+        const response = await client.get(`${BASE_URL}/airplane-models`);
+        console.log(`[API] Fetched ${response.data.length} airplane models.`);
+        // Convert array to a Map for easy lookup by modelId
+        const modelMap = new Map();
+        for (const model of response.data) {
+            modelMap.set(model.id, model);
+        }
+        return modelMap;
+    } catch (error) {
+        console.error('[API] Failed to fetch airplane models:', error.message);
+        throw new Error('Could not fetch airplane model list.');
+    }
+}
+
+/**
  * Fetches route planning data between two airports.
  */
 export async function fetchRouteData(client, airlineId, fromAirportId, toAirportId) {
@@ -74,11 +96,7 @@ export async function fetchRouteData(client, airlineId, fromAirportId, toAirport
         const response = await client.post(
             `${BASE_URL}/airlines/${airlineId}/plan-link`,
             params,
-            {
-                headers: {
-                    'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8'
-                }
-            }
+            { headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' } }
         );
         return response.data;
     } catch (error) {
@@ -88,16 +106,67 @@ export async function fetchRouteData(client, airlineId, fromAirportId, toAirport
 }
 
 /**
- * Helper to get the weekly cost for a specific aircraft model on a route.
- * @param {object} routeData - The full JSON response from the plan-link endpoint.
- * @returns {number} The weekly cost.
+ * (REBUILT) Helper to get the weekly cost for a *specific* aircraft model on a route.
+ * This now replicates the client-side math.
  */
-function getCostForModel(routeData) {
-    // TODO: Replace this when we capture the per-model cost endpoint.
-    // For now, as per NOTES_FOR_AI.md, we MUST use the single top-level `cost`
-    // from the API response for all calculations, even though it's only
-    // correct for one of the planes.
-    return routeData.cost;
+function getCostForModel(routeData, plane, planeBaseStats, isDebug) {
+    if (!planeBaseStats) {
+        if (isDebug) console.log(`    [COST] No base stats found for ${plane.modelName} (ID: ${plane.modelId}). Cannot calculate cost.`);
+        return null; // Cannot calculate cost without base stats
+    }
+
+    // --- INPUTS ---
+    const distance = routeData.distance; // e.g., 809
+    const flightsPerWeek = plane.maxFrequency; // e.g., 16
+    const flightMinutes = plane.flightMinutesRequired; // e.g., 342
+    
+    const {
+        fuelBurn,       // e.g., 52
+        capacity,       // e.g., 40
+        price,          // e.g., 16200000
+        lifespan,       // e.g., 1820
+    } = planeBaseStats;
+
+    // --- CALCULATIONS (per week) ---
+    
+    // 1. Fuel Cost
+    // (fuelBurn * distance * 2 trips * flightsPerWeek * fuelPrice)
+    const fuelCost = fuelBurn * distance * 2 * flightsPerWeek * FUEL_PRICE;
+
+    // 2. Crew Cost
+    // (flightMinutes * flightsPerWeek * crewCostPerMinute)
+    const crewCost = flightMinutes * flightsPerWeek * CREW_COST_PER_MINUTE;
+
+    // 3. Airport Fees
+    // (flightsPerWeek * 2 trips * feePerFlight)
+    const airportFees = flightsPerWeek * 2 * AIRPORT_FEE_PER_FLIGHT;
+
+    // 4. Depreciation
+    // (price / lifespan)
+    const depreciation = price / lifespan;
+
+    // 5. Service Supplies
+    // (capacity * flightsPerWeek * 2 trips * costPerPax)
+    const serviceSupplies = capacity * flightsPerWeek * 2 * SERVICE_SUPPLY_COST_PER_PAX;
+    
+    // 6. Maintenance
+    // (flightMinutes * flightsPerWeek * maintenanceCostPerMinute)
+    const maintenance = flightMinutes * flightsPerWeek * MAINTENANCE_COST_PER_MINUTE;
+
+    const totalCost = fuelCost + crewCost + airportFees + depreciation + serviceSupplies + maintenance;
+
+    if (isDebug) {
+        console.log(`    [COST] Calculatons for ${plane.modelName}:`);
+        console.log(`      - Fuel: $${Math.round(fuelCost).toLocaleString()}`);
+        console.log(`      - Crew: $${Math.round(crewCost).toLocaleString()}`);
+        console.log(`      - Airport: $${Math.round(airportFees).toLocaleString()}`);
+        console.log(`      - Depreciation: $${Math.round(depreciation).toLocaleString()}`);
+        console.log(`      - Supplies: $${Math.round(serviceSupplies).toLocaleString()}`);
+        console.log(`      - Maintenance: $${Math.round(maintenance).toLocaleString()}`);
+        console.log(`      - TOTAL WEEKLY COST: $${Math.round(totalCost).toLocaleString()}`);
+    }
+
+    return totalCost;
 }
 
 /**
@@ -105,7 +174,6 @@ function getCostForModel(routeData) {
  */
 function getTicketPrice(routeData) {
     const competitors = routeData.otherLinks;
-    
     if (competitors && competitors.length > 0) {
         const competitorPrices = competitors.map(comp => comp.price.economy);
         return Math.min(...competitorPrices);
@@ -115,9 +183,9 @@ function getTicketPrice(routeData) {
 }
 
 /**
- * (UPDATED) Analyzes a single route and returns the best profit-per-frequency.
+ * (REBUILT) Analyzes a single route and returns the best profit-per-frequency.
  */
-export function analyzeRoute(routeData, userPlaneList, isDebug) {
+export function analyzeRoute(routeData, userPlaneList, airplaneModelMap, isDebug) {
     if (isDebug) {
         console.log(`\n[DEBUG] Analyzing route: ${routeData.fromAirportCode} -> ${routeData.toAirportCode}`);
     }
@@ -163,32 +231,34 @@ export function analyzeRoute(routeData, userPlaneList, isDebug) {
         console.log(`  [DEBUG] Found ${viablePlanes.length} viable planes: ${viablePlanes.map(p => p.modelName).join(', ')}`);
     }
 
-    // --- (THIS IS THE FIX) ---
-    // We now loop through all viable planes, calculate a score for each,
-    // and find the plane with the *maximum* score, not the minimum cost.
-
-    let bestPlane = null;
+    let bestPlaneForRoute = null;
     let maxScore = -Infinity;
-    
-    // Get the single cost value we have for this route.
-    // This is the flawed data, but it's all we have.
-    const routeCost = getCostForModel(routeData);
     const ticketPrice = getTicketPrice(routeData);
-
+    
     if (isDebug) {
-        console.log(`  [DEBUG] Using shared Ticket Price: $${ticketPrice} and shared Weekly Cost: $${routeCost.toLocaleString()} for all calculations.`);
-        console.log(`  [DEBUG] (Note: Cost is $0 for MII, but $46,311 for GYN. This is based on the API response.)`);
+        console.log(`  [DEBUG] Using Ticket Price: $${ticketPrice}`);
     }
 
     for (const plane of viablePlanes) {
-        const F = plane.maxFrequency; // Max Frequency
-        const C = plane.capacity;     // Capacity
+        // Get the *base stats* for this plane from the master list
+        const planeBaseStats = airplaneModelMap.get(plane.modelId);
+        
+        // Calculate the *true* weekly cost for this specific plane
+        const routeCost = getCostForModel(routeData, plane, planeBaseStats, isDebug);
+
+        if (routeCost === null) {
+            if (isDebug) console.log(`  [DEBUG] Skipping plane ${plane.modelName}: Could not calculate cost.`);
+            continue; // Skip if we couldn't get stats
+        }
+        
+        const F = plane.maxFrequency;
+        const C = plane.capacity;
         
         if (F === 0) {
             if (isDebug) {
                 console.log(`  [DEBUG] Skipping plane ${plane.modelName}: Frequency is 0.`);
             }
-            continue; // Skip this plane
+            continue;
         }
 
         const REVENUE = ticketPrice * F * C;
@@ -196,40 +266,36 @@ export function analyzeRoute(routeData, userPlaneList, isDebug) {
         const SCORE = Math.round(PROFIT / F);
 
         if (isDebug) {
-            console.log(`    [CALC] Plane: ${plane.modelName}`);
-            console.log(`      - Freq: ${F}, Capacity: ${C}`);
-            console.log(`      - Revenue (Ticket * F * C): $${Math.round(REVENUE).toLocaleString()}`);
-            console.log(`      - Profit (Rev - Cost): $${Math.round(PROFIT).toLocaleString()}`);
+            console.log(`    [CALC] Final score for ${plane.modelName}:`);
+            console.log(`      - Revenue: $${Math.round(REVENUE).toLocaleString()}`);
+            console.log(`      - Profit: $${Math.round(PROFIT).toLocaleString()}`);
             console.log(`      - SCORE (Profit / F): $${SCORE.toLocaleString()}`);
         }
 
         if (SCORE > maxScore) {
             maxScore = SCORE;
-            bestPlane = plane;
+            bestPlaneForRoute = plane;
         }
     }
-    // --- (END OF FIX) ---
 
-    if (!bestPlane) {
+    if (!bestPlaneForRoute) {
         if (isDebug) {
-            console.log(`  [DEBUG] Skipping: No viable planes had frequency > 0.`);
+            console.log(`  [DEBUG] Skipping: No viable planes had frequency > 0 or valid stats.`);
         }
-        return null; // All viable planes had 0 frequency
+        return null;
     }
 
-    // Log the winner
     if (isDebug) {
-        console.log(`  [ANALYSIS] Best plane for route ${routeData.fromAirportCode} -> ${routeData.toAirportCode} is: ${bestPlane.modelName} with score $${maxScore.toLocaleString()}`);
+        console.log(`  [ANALYSIS] Best plane for route ${routeData.fromAirportCode} -> ${routeData.toAirportCode} is: ${bestPlaneForRoute.modelName} with score $${maxScore.toLocaleString()}`);
     } else if (maxScore > 0) {
-        // Only log profitable routes in non-debug mode
-        console.log(`  [ANALYSIS] Route ${routeData.fromAirportCode} -> ${routeData.toAirportCode}: Found profit! Score: $${maxScore.toLocaleString()} (Plane: ${bestPlane.modelName})`);
+        console.log(`  [ANALYSIS] Route ${routeData.fromAirportCode} -> ${routeData.toAirportCode}: Found profit! Score: $${maxScore.toLocaleString()} (Plane: ${bestPlaneForRoute.modelName})`);
     }
 
     return {
         fromAirportId: routeData.fromAirportId,
         toAirportId: routeData.toAirportId,
         score: maxScore,
-        planeName: bestPlane.modelName,
+        planeName: bestPlaneForRoute.modelName,
     };
 }
 
@@ -249,6 +315,11 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
     
     await onProgress('Fetching global airport list...');
     const allAirports = await fetchAirports(client);
+
+    // --- (NEW) Fetch the master airplane model list *once* ---
+    await onProgress('Fetching global airplane model stats...');
+    const airplaneModelMap = await fetchAirplaneModels(client);
+    // --- (END NEW) ---
 
     let airportsToScan = allAirports;
     if (testLimit > 0 && testLimit < allAirports.length) {
@@ -295,7 +366,8 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
             const routeData = await fetchRouteData(client, airlineId, fromAirportId, toAirportId);
             
             if (routeData) {
-                const analysis = analyzeRoute(routeData, userPlaneList, isDebug);
+                // --- (UPDATED) Pass the airplaneModelMap to the analyzer ---
+                const analysis = analyzeRoute(routeData, userPlaneList, airplaneModelMap, isDebug);
                 if (analysis) {
                     analysis.fromIata = fromAirport.iata;
                     analysis.fromCity = fromAirport.city;
