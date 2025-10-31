@@ -14,6 +14,18 @@ export async function execute(interaction) {
     const accountName = interaction.options.getString('account');
     console.log(`[RUN] Starting analysis for account: ${accountName}`);
     
+    // --- (NEW) Read new .env variables ---
+    const isDebug = process.env.DEBUG_LOGGING === 'true';
+    const testLimit = parseInt(process.env.TEST_AIRPORT_LIMIT, 10) || 0;
+
+    if (isDebug) {
+        console.log('[RUN] *** DEBUG MODE IS ON ***');
+    }
+    if (testLimit > 0) {
+        console.log(`[RUN] *** TEST LIMIT IS ON: Will only scan ${testLimit} airports. ***`);
+    }
+    // --- End New ---
+
     const state = await loadState();
 
     const account = state.accounts[accountName];
@@ -34,26 +46,24 @@ export async function execute(interaction) {
     }
     console.log('[RUN] State validated. Starting analysis client.');
 
-    // --- UPDATED onProgress FUNCTION ---
-    // This now logs to console *and* sends to Discord
     const onProgress = async (message) => {
-        console.log(`[RUN] ${message}`); // <--- ADDED THIS LINE
+        console.log(`[RUN] ${message}`); // This logs the 50/3509 updates
         try {
-            // Send all progress updates as new follow-ups
             await interaction.followUp({ content: message, ephemeral: true });
         } catch (error) {
-            // This error is common (editing too fast), just log it
             console.warn('[WARN] Discord progress update failed (likely editing too fast).');
         }
     };
-    // --- END UPDATE ---
 
     try {
+        // --- (UPDATED) Pass new variables to the client ---
         const results = await runAnalysis(
             account.username,
             account.password,
             state.baseAirports,
             state.planeList,
+            isDebug,
+            testLimit,
             onProgress
         );
 
@@ -68,7 +78,6 @@ export async function execute(interaction) {
             }
 
             console.log(`[RUN] Posting top ${routes.length} routes for ${baseIata}.`);
-            // Format results as specified
             const formattedResults = routes.map(route => 
                 `\`${route.fromIata} (${route.fromCity}) - ${route.toIata} (${route.toCity})\` - **$${route.score.toLocaleString()}**`
             ).join('\n');
@@ -79,7 +88,6 @@ export async function execute(interaction) {
                 .setDescription(formattedResults)
                 .setTimestamp();
             
-            // Send results to the channel where command was run
             await interaction.channel.send({ embeds: [embed] });
         }
 
