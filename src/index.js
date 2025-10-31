@@ -41,12 +41,9 @@ client.once('ready', c => {
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
-    // --- ADDED LOG ---
     console.log(`[INFO] Received command: /${interaction.commandName} from ${interaction.user.tag}`);
-    // --- END ---
 
     const command = client.commands.get(interaction.commandName);
-
     if (!command) {
         console.error(`No command matching ${interaction.commandName} was found.`);
         return;
@@ -56,10 +53,16 @@ client.on('interactionCreate', async interaction => {
         await command.execute(interaction);
     } catch (error) {
         console.error(error);
-        if (interaction.replied || interaction.deferred) {
-            await interaction.followUp({ content: 'There was an error executing this command!', ephemeral: true });
-        } else {
-            await interaction.reply({ content: 'There was an error executing this command!', ephemeral: true });
+        try {
+            if (interaction.replied || interaction.deferred) {
+                // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+                await interaction.followUp({ content: 'There was an error executing this command!', flags: 64 });
+            } else {
+                // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+                await interaction.reply({ content: 'There was an error executing this command!', flags: 64 });
+            }
+        } catch (err2) {
+            console.error('Error while sending error reply:', err2);
         }
     }
 });
