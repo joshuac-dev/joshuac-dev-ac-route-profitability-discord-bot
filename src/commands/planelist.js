@@ -43,12 +43,17 @@ export async function execute(interaction) {
             state.planeList.push(entry);
             addedMsg = `Added plane with ID: ${entry.modelId}`;
         } else {
-            entry = { modelId: null, modelName: planeIdentifier };
+            // --- (FIX) Normalize the name before saving ---
+            const normalizedName = planeIdentifier.trim().toLowerCase();
+            entry = { modelId: null, modelName: normalizedName };
+
             if (state.planeList.some(p => p.modelName === entry.modelName)) {
-                return interaction.reply({ content: `Plane with name "${entry.modelName}" is already in the list.`, ephemeral: true });
+                return interaction.reply({ content: `Plane with name "${normalizedName}" is already in the list.`, ephemeral: true });
             }
             state.planeList.push(entry);
-            addedMsg = `Added plane with name: "${entry.modelName}"`;
+            // Give user feedback on the normalization
+            addedMsg = `Added plane with name: "${planeIdentifier}" (stored as: ${normalizedName})`;
+            // --- End Fix ---
         }
         
         await saveState(state);
@@ -63,7 +68,10 @@ export async function execute(interaction) {
             const modelId = parseInt(planeIdentifier, 10);
             state.planeList = state.planeList.filter(p => p.modelId !== modelId);
         } else {
-            state.planeList = state.planeList.filter(p => p.modelName !== planeIdentifier);
+            // --- (FIX) Normalize name for deletion too ---
+            const normalizedName = planeIdentifier.trim().toLowerCase();
+            state.planeList = state.planeList.filter(p => p.modelName !== normalizedName);
+            // --- End Fix ---
         }
 
         if (state.planeList.length === originalLength) {
