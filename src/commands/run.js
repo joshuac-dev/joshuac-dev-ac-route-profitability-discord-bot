@@ -9,12 +9,12 @@ export const subcommands = (builder) =>
         .addStringOption(opt => opt.setName('account').setDescription('The name of the account to use').setRequired(true)));
 
 export async function execute(interaction) {
-    await interaction.reply({ content: 'Starting analysis... This may take a long time. 🚀', ephemeral: true });
+    // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+    await interaction.reply({ content: 'Starting analysis... This may take a long time. 🚀', flags: 64 });
     
     const accountName = interaction.options.getString('account');
     console.log(`[RUN] Starting analysis for account: ${accountName}`);
     
-    // --- (NEW) Read new .env variables ---
     const isDebug = process.env.DEBUG_LOGGING === 'true';
     const testLimit = parseInt(process.env.TEST_AIRPORT_LIMIT, 10) || 0;
 
@@ -24,39 +24,41 @@ export async function execute(interaction) {
     if (testLimit > 0) {
         console.log(`[RUN] *** TEST LIMIT IS ON: Will only scan ${testLimit} airports. ***`);
     }
-    // --- End New ---
 
     const state = await loadState();
 
     const account = state.accounts[accountName];
     if (!account) {
         console.error(`[RUN] Error: Account "${accountName}" not found.`);
-        return interaction.followUp({ content: `Error: Account "${accountName}" not found in \`bot_state.json\`.`, ephemeral: true });
+        // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+        return interaction.followUp({ content: `Error: Account "${accountName}" not found in \`bot_state.json\`.`, flags: 64 });
     }
     
     console.log('[RUN] Validating state: Checking for baselist and planelist.');
     if (!state.baseAirports || Object.keys(state.baseAirports).length === 0) {
         console.error('[RUN] Error: Baselist is empty.');
-        return interaction.followUp({ content: 'Error: Your baselist is empty. Add airports with `/routefinder baselist_add`.', ephemeral: true });
+        // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+        return interaction.followUp({ content: 'Error: Your baselist is empty. Add airports with `/routefinder baselist_add`.', flags: 64 });
     }
     
     if (!state.planeList || state.planeList.length === 0) {
         console.error('[RUN] Error: Planelist is empty.');
-        return interaction.followUp({ content: 'Error: Your planelist is empty. Add planes with `/routefinder planelist_add`.', ephemeral: true });
+        // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+        return interaction.followUp({ content: 'Error: Your planelist is empty. Add planes with `/routefinder planelist_add`.', flags: 64 });
     }
     console.log('[RUN] State validated. Starting analysis client.');
 
     const onProgress = async (message) => {
-        console.log(`[RUN] ${message}`); // This logs the 50/3509 updates
+        console.log(`[RUN] ${message}`);
         try {
-            await interaction.followUp({ content: message, ephemeral: true });
+            // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+            await interaction.followUp({ content: message, flags: 64 });
         } catch (error) {
             console.warn('[WARN] Discord progress update failed (likely editing too fast).');
         }
     };
 
     try {
-        // --- (UPDATED) Pass new variables to the client ---
         const results = await runAnalysis(
             account.username,
             account.password,
@@ -68,7 +70,8 @@ export async function execute(interaction) {
         );
 
         console.log('[RUN] Analysis complete. Posting results to Discord.');
-        await interaction.followUp({ content: '✅ Analysis complete! Posting results...', ephemeral: true });
+        // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+        await interaction.followUp({ content: '✅ Analysis complete! Posting results...', flags: 64 });
 
         for (const [baseIata, routes] of results.entries()) {
             if (routes.length === 0) {
@@ -93,6 +96,7 @@ export async function execute(interaction) {
 
     } catch (error) {
         console.error(`[RUN] Analysis failed: ${error.message}`);
-        await interaction.followUp({ content: `Error during analysis: ${error.message}`, ephemeral: true });
+        // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+        await interaction.followUp({ content: `Error during analysis: ${error.message}`, flags: 64 });
     }
 }
