@@ -19,14 +19,16 @@ export async function execute(interaction) {
 
     if (subcommand === 'planelist_view') {
         if (!state.planeList || state.planeList.length === 0) {
-            return interaction.reply({ content: 'Your planelist is currently empty.', ephemeral: true });
+            // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+            return interaction.reply({ content: 'Your planelist is currently empty.', flags: 64 });
         }
         
         const planeListString = state.planeList
             .map(p => `• ${p.modelName || 'Unknown Name'} (ID: ${p.modelId || 'Unknown ID'})`)
             .join('\n');
         
-        return interaction.reply({ content: `**Current Planelist:**\n${planeListString}`, ephemeral: true });
+        // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+        return interaction.reply({ content: `**Current Planelist:**\n${planeListString}`, flags: 64 });
     
     } else if (subcommand === 'planelist_add') {
         const planeIdentifier = interaction.options.getString('plane');
@@ -38,26 +40,25 @@ export async function execute(interaction) {
             const modelId = parseInt(planeIdentifier, 10);
             entry = { modelId: modelId, modelName: null };
             if (state.planeList.some(p => p.modelId === entry.modelId)) {
-                return interaction.reply({ content: `Plane with ID ${entry.modelId} is already in the list.`, ephemeral: true });
+                // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+                return interaction.reply({ content: `Plane with ID ${entry.modelId} is already in the list.`, flags: 64 });
             }
             state.planeList.push(entry);
             addedMsg = `Added plane with ID: ${entry.modelId}`;
         } else {
-            // --- (FIX) Normalize the name before saving ---
             const normalizedName = planeIdentifier.trim().toLowerCase();
             entry = { modelId: null, modelName: normalizedName };
-
             if (state.planeList.some(p => p.modelName === entry.modelName)) {
-                return interaction.reply({ content: `Plane with name "${normalizedName}" is already in the list.`, ephemeral: true });
+                // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+                return interaction.reply({ content: `Plane with name "${normalizedName}" is already in the list.`, flags: 64 });
             }
             state.planeList.push(entry);
-            // Give user feedback on the normalization
             addedMsg = `Added plane with name: "${planeIdentifier}" (stored as: ${normalizedName})`;
-            // --- End Fix ---
         }
         
         await saveState(state);
-        return interaction.reply({ content: `${addedMsg}. Your planelist now has ${state.planeList.length} entries.`, ephemeral: true });
+        // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+        return interaction.reply({ content: `${addedMsg}. Your planelist now has ${state.planeList.length} entries.`, flags: 64 });
 
     } else if (subcommand === 'planelist_delete') {
         const planeIdentifier = interaction.options.getString('plane');
@@ -68,17 +69,17 @@ export async function execute(interaction) {
             const modelId = parseInt(planeIdentifier, 10);
             state.planeList = state.planeList.filter(p => p.modelId !== modelId);
         } else {
-            // --- (FIX) Normalize name for deletion too ---
             const normalizedName = planeIdentifier.trim().toLowerCase();
             state.planeList = state.planeList.filter(p => p.modelName !== normalizedName);
-            // --- End Fix ---
         }
 
         if (state.planeList.length === originalLength) {
-            return interaction.reply({ content: `Could not find plane "${planeIdentifier}" in the list.`, ephemeral: true });
+            // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+            return interaction.reply({ content: `Could not find plane "${planeIdentifier}" in the list.`, flags: 64 });
         }
 
         await saveState(state);
-        return interaction.reply({ content: `Removed "${planeIdentifier}" from the list.`, ephemeral: true });
+        // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+        return interaction.reply({ content: `Removed "${planeIdentifier}" from the list.`, flags: 64 });
     }
 }
