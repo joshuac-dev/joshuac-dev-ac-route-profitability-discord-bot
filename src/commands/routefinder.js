@@ -28,6 +28,11 @@ const handlers = {
 
 export async function execute(interaction) {
     const subcommand = interaction.options.getSubcommand();
+    
+    // --- ADDED LOG ---
+    console.log(`[INFO] Handling subcommand: ${subcommand}`);
+    // --- END ---
+
     const handler = handlers[subcommand];
     
     if (handler) {
