@@ -104,14 +104,14 @@ export async function fetchRouteData(client, airlineId, fromAirportId, toAirport
  * @returns {number} The weekly cost.
  */
 function getCostForModel(routeData, modelId) {
-    // TODO: Replace this when we capture the per-model cost endpoint.
+    // TODO: Replace this when we capture the per-model cost endpoint[cite: 53].
     // For now, as per NOTES_FOR_AI.md, we assume the single top-level `cost`
     // applies to all models, even though this is incorrect.
     return routeData.cost;
 }
 
 /**
- * Calculates the economy ticket price based on competitor rules.
+ * Calculates the economy ticket price based on competitor rules[cite: 47].
  * @param {object} routeData - The full JSON response from the plan-link endpoint.
  * @returns {number} The ticket price to use.
  */
@@ -135,18 +135,20 @@ function getTicketPrice(routeData) {
  * @returns {object | null} An object with score and plane details, or null if no viable plane.
  */
 export function analyzeRoute(routeData, userPlaneList) {
-    const userPlaneIds = new Set(userPlaneList.map(p => p.modelId));
+    // Build lookup sets for *both* ID and Name, filtering out nulls
+    const userPlaneIds = new Set(userPlaneList.filter(p => p.modelId).map(p => p.modelId));
+    const userPlaneNames = new Set(userPlaneList.filter(p => p.modelName).map(p => p.modelName));
     
     // Filter the route's available models to only those the user has in their list
     const viablePlanes = routeData.modelPlanLinkInfo.filter(model => 
-        userPlaneIds.has(model.modelId)
+        userPlaneIds.has(model.modelId) || userPlaneNames.has(model.modelName)
     );
 
     if (viablePlanes.length === 0) {
         return null; // No planes in the user's list can fly this route
     }
 
-    // Find the "best plane" for this route (lowest weekly cost)
+    // Find the "best plane" for this route (lowest weekly cost) [cite: 47]
     let bestPlane = null;
     let minCost = Infinity;
 
@@ -158,7 +160,6 @@ export function analyzeRoute(routeData, userPlaneList) {
         }
     }
 
-    // If all costs were Infinity (or no plane found), skip
     if (!bestPlane) {
         return null;
     }
@@ -182,7 +183,7 @@ export function analyzeRoute(routeData, userPlaneList) {
     return {
         fromAirportId: routeData.fromAirportId,
         toAirportId: routeData.toAirportId,
-        score: Math.round(PROFIT_PER_FREQUENCY), // Round to whole dollar
+        score: Math.round(PROFIT_PER_FREQUENCY), // Round to whole dollar [cite: 47]
         planeName: bestPlane.modelName,
     };
 }
@@ -213,14 +214,13 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
     
     // Build lookups for easy formatting
     const airportIdLookup = new Map();
-    const airportIataLookup = new Map();
     for (const airport of allAirports) {
         airportIdLookup.set(airport.id, airport);
-        airportIataLookup.set(airport.iata, airport);
     }
     
     const allResults = new Map();
     const baseIatas = Object.keys(baseAirports);
+    let baseIndex = 1;
 
     for (const baseIata of baseIatas) {
         const fromAirportId = baseAirports[baseIata];
@@ -231,7 +231,8 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
             continue;
         }
 
-        await onProgress(`Analyzing routes from ${baseIata} (${fromAirport.city})... (0/${allAirports.length})`);
+        const baseProgress = `(Base ${baseIndex}/${baseIatas.length})`;
+        await onProgress(`Analyzing routes from ${baseIata} ${baseProgress}... (0/${allAirports.length})`);
         
         let routeScores = [];
         let processedCount = 0;
@@ -261,18 +262,19 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
             
             processedCount++;
             if (processedCount % 50 === 0) { // Update progress every 50 airports
-                await onProgress(`Analyzing routes from ${baseIata} (${fromAirport.city})... (${processedCount}/${allAirports.length})`);
+                await onProgress(`Analyzing routes from ${baseIata} ${baseProgress}... (${processedCount}/${allAirports.length})`);
             }
 
-            // Add mandatory delay to avoid hammering the server
-            await delay(150); // 150ms delay between each call
+            // Add mandatory delay to avoid hammering the server [cite: 47]
+            await delay(150); // 150ms delay
         }
 
         // Sort results for this base
         routeScores.sort((a, b) => b.score - a.score);
         
-        // Store top 10
+        // Store top 10 [cite: 47]
         allResults.set(baseIata, routeScores.slice(0, 10));
+        baseIndex++;
     }
     
     return allResults;
@@ -287,7 +289,11 @@ export async function getAirportByIata(iata) {
     // This function must use its own client, as it's used
     // by baselist commands without a full login session.
     const client = createApiClient(); 
-    const allAirports = await fetchAirports(client);
-    
-    return allAirports.find(a => a.iata.toUpperCase() === iata.toUpperCase()) || null;
+    try {
+        const allAirports = await fetchAirports(client);
+        return allAirports.find(a => a.iata.toUpperCase() === iata.toUpperCase()) || null;
+    } catch (error) {
+        console.error("Failed to get airport by IATA:", error);
+        return null;
+    }
 }
