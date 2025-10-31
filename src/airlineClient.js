@@ -4,9 +4,6 @@ import { CookieJar } from 'tough-cookie';
 
 const BASE_URL = 'https://www.airline-club.com';
 
-// (createApiClient, login, fetchAirports, fetchRouteData, getCostForModel, getTicketPrice are unchanged...)
-// ... (previous functions) ...
-
 /**
  * Creates a new, sandboxed API client instance with its own cookie jar.
  */
@@ -112,7 +109,6 @@ function getTicketPrice(routeData) {
     }
 }
 
-
 /**
  * (UPDATED) Analyzes a single route and returns the best profit-per-frequency.
  */
@@ -121,34 +117,40 @@ export function analyzeRoute(routeData, userPlaneList, isDebug) {
         console.log(`\n[DEBUG] Analyzing route: ${routeData.fromAirportCode} -> ${routeData.toAirportCode}`);
     }
 
-    // --- (FIX) Build normalized sets for comparison ---
     const userPlaneIds = new Set(userPlaneList.filter(p => p.modelId).map(p => p.modelId));
     // Normalize names from state, in case old, non-normalized data exists
     const userPlaneNames = new Set(userPlaneList.filter(p => p.modelName).map(p => p.modelName.trim().toLowerCase())); 
-    // --- End Fix ---
 
     if (isDebug) {
          console.log(`  [DEBUG] Matching against ${userPlaneIds.size} IDs: [${[...userPlaneIds].join(', ')}]`);
          console.log(`  [DEBUG] Matching against ${userPlaneNames.size} names: ["${[...userPlaneNames].join('", "')}"]`);
     }
 
-    // --- (FIX) Check API planes against normalized sets ---
+    // --- (THIS IS THE FIX) ---
     const viablePlanes = routeData.modelPlanLinkInfo.filter(model => {
-        // Normalize the API's plane name
         const apiModelName = model.modelName ? model.modelName.trim().toLowerCase() : null;
         const idMatch = userPlaneIds.has(model.modelId);
-        const nameMatch = apiModelName ? userPlaneNames.has(apiModelName) : false;
+
+        // Change from exact match (Set.has) to contains match (String.includes)
+        let nameMatch = false;
+        if (apiModelName) {
+            for (const storedName of userPlaneNames) {
+                if (apiModelName.includes(storedName)) {
+                    nameMatch = true;
+                    break;
+                }
+            }
+        }
+        // --- (END OF FIX) ---
         
-        // --- (NEW) Detailed per-plane debug logging ---
         if (isDebug) {
             console.log(`    [DEBUG] Checking API plane: "${model.modelName}" (ID: ${model.modelId})`);
             console.log(`      -> ID Match (${model.modelId}): ${idMatch}`);
-            console.log(`      -> Name Match ("${apiModelName}"): ${nameMatch}`);
+            // Updated log to be more clear about the logic
+            console.log(`      -> Name Match (API: "${apiModelName}" includes any from your list?): ${nameMatch}`);
         }
-        // --- End New ---
         return idMatch || nameMatch;
     });
-    // --- End Fix ---
 
     if (viablePlanes.length === 0) {
         if (isDebug) {
@@ -173,7 +175,7 @@ export function analyzeRoute(routeData, userPlaneList, isDebug) {
     }
 
     if (!bestPlane) {
-        return null; // Should not happen if viablePlanes.length > 0
+        return null;
     }
 
     const F = bestPlane.maxFrequency;
@@ -220,7 +222,7 @@ export function analyzeRoute(routeData, userPlaneList, isDebug) {
 export const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * (UPDATED) Main analysis runner.
+ * Main analysis runner.
  */
 export async function runAnalysis(username, password, baseAirports, userPlaneList, isDebug, testLimit, onProgress) {
     const client = createApiClient();
