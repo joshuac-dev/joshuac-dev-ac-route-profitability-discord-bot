@@ -1,7 +1,7 @@
 import { SlashCommandBuilder } from '@discordjs/builders';
-import *s planelist from './planelist.js';
-import *s baselist from './baselist.js';
-import *s run from './run.js';
+import * as planelist from './planelist.js';
+import * as baselist from './baselist.js';
+import * as run from './run.js';
 
 // Build the nested command structure
 const builder = new SlashCommandBuilder()
@@ -31,8 +31,6 @@ export async function execute(interaction) {
     const handler = handlers[subcommand];
     
     if (handler) {
-        // All handlers need access to state, so we can pass it here
-        // (No, the handlers import it themselves. This is fine.)
         await handler(interaction);
     } else {
         await interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
