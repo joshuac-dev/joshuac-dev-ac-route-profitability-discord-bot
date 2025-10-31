@@ -1,14 +1,14 @@
 # Routefinder Discord Bot
 
-[cite_start]This is a Discord bot for analyzing profitable flight routes in the game Airline Club. [cite_start]It interacts directly with the game's JSON APIs, without any browser automation[cite: 50].
+This is a Discord bot for analyzing profitable flight routes in the game Airline Club. It interacts directly with the game's JSON APIs, without any browser automation.
 
 ## Features
 
--   [cite_start]Analyzes profit-per-frequency for routes from your base airports[cite: 47].
--   [cite_start]Ranks and displays the top 10 most profitable routes per base[cite: 47, 48].
--   [cite_start]Uses your specified `planelist` to only consider planes you own[cite: 47].
--   [cite_start]Calculates profit based on lowest competitor pricing or suggested price[cite: 47].
--   [cite_start]Manages state (accounts, planelist, baselist) in a `bot_state.json` file.
+-   Analyzes profit-per-frequency for routes from your base airports.
+-   Ranks and displays the top 10 most profitable routes per base.
+-   Uses your specified `planelist` to only consider planes you own.
+-   Calculates profit based on lowest competitor pricing or suggested price.
+-   Manages state (accounts, planelist, baselist) in a `bot_state.json` file.
 
 ## Setup
 
@@ -47,13 +47,20 @@
     ```
     nano .env
     ```
-5.  Add your bot token and client ID to this file:
+5.  Add your bot token and client ID to this file. **Also add the new `DEBUG_LOGGING` and `TEST_AIRPORT_LIMIT` variables.**
     ```ini
     # Your Discord Bot Token from the developer portal
     DISCORD_BOT_TOKEN=YOUR_TOKEN_HERE
 
     # Your Application/Client ID from the 'General Information' page
     DISCORD_CLIENT_ID=YOUR_CLIENT_ID_HERE
+
+    # Set to "true" to enable detailed, iterative logging in the console
+    DEBUG_LOGGING="true"
+
+    # Set to a number (e.g., 50) to limit analysis to the first X airports for testing.
+    # Leave blank or set to 0 to run all airports.
+    TEST_AIRPORT_LIMIT=50
     ```
 6.  Create the state file with default empty state:
     ```bash
