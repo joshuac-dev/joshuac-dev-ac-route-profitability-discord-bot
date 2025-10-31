@@ -1,0 +1,21 @@
+{
+  "name": "routefinder-bot",
+  "version": "1.0.0",
+  "description": "Discord bot for Airline Club route profitability analysis.",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "deploy": "node src/deploy-commands.js"
+  },
+  "dependencies": {
+    "@discordjs/builders": "^1.8.2",
+    "@discordjs/rest": "^2.3.0",
+    "axios": "^1.7.2",
+    "axios-cookiejar-support": "^5.0.1",
+    "discord-api-types": "^0.37.92",
+    "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5",
+    "tough-cookie": "^4.1.4"
+  }
+}
