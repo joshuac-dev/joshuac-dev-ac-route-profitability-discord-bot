@@ -21,7 +21,7 @@ function createApiClient() {
 export async function login(client, username, password) {
     const credentials = Buffer.from(`${username}:${password}`).toString('base64');
     
-    console.log(`[API] Attempting login for ${username}...`); // ADDED
+    console.log(`[API] Attempting login for ${username}...`);
     
     try {
         const response = await client.post(
@@ -35,13 +35,13 @@ export async function login(client, username, password) {
         );
         
         if (response.data && response.data.airlineIds && response.data.airlineIds.length > 0) {
-            console.log(`[API] Login successful. Got airlineId: ${response.data.airlineIds[0]}`); // ADDED
+            console.log(`[API] Login successful. Got airlineId: ${response.data.airlineIds[0]}`);
             return response.data.airlineIds[0];
         } else {
             throw new Error('Login failed: No airlineIds found in response.');
         }
     } catch (error) {
-        console.error('[API] Login request failed:', error.message); // EDITED
+        console.error('[API] Login request failed:', error.message);
         throw new Error('Login failed. Please check credentials and server status.');
     }
 }
@@ -50,13 +50,13 @@ export async function login(client, username, password) {
  * Fetches the global list of all airports.
  */
 export async function fetchAirports(client) {
-    console.log('[API] Fetching global airport list...'); // ADDED
+    console.log('[API] Fetching global airport list...');
     try {
         const response = await client.get(`${BASE_URL}/airports`);
-        console.log(`[API] Fetched ${response.data.length} airports.`); // ADDED
+        console.log(`[API] Fetched ${response.data.length} airports.`);
         return response.data;
     } catch (error) {
-        console.error('[API] Failed to fetch airports:', error.message); // EDITED
+        console.error('[API] Failed to fetch airports:', error.message);
         throw new Error('Could not fetch airport list.');
     }
 }
@@ -70,9 +70,6 @@ export async function fetchRouteData(client, airlineId, fromAirportId, toAirport
     params.append('fromAirportId', fromAirportId);
     params.append('toAirportId', toAirportId);
 
-    // This log is too noisy, let's log on success/fail
-    // console.log(`[API] Fetching route: ${fromAirportId} -> ${toAirportId}`); // REMOVED
-
     try {
         const response = await client.post(
             `${BASE_URL}/airlines/${airlineId}/plan-link`,
@@ -85,7 +82,7 @@ export async function fetchRouteData(client, airlineId, fromAirportId, toAirport
         );
         return response.data;
     } catch (error) {
-        console.error(`[API] Failed to fetch route data (${fromAirportId} -> ${toAirportId}):`, error.message); // EDITED
+        console.error(`[API] Failed to fetch route data (${fromAirportId} -> ${toAirportId}):`, error.message);
         return null;
     }
 }
@@ -113,9 +110,13 @@ function getTicketPrice(routeData) {
 }
 
 /**
- * Analyzes a single route and returns the best profit-per-frequency.
+ * (UPDATED) Analyzes a single route and returns the best profit-per-frequency.
  */
-export function analyzeRoute(routeData, userPlaneList) {
+export function analyzeRoute(routeData, userPlaneList, isDebug) {
+    if (isDebug) {
+        console.log(`\n[DEBUG] Analyzing route: ${routeData.fromAirportCode} -> ${routeData.toAirportCode}`);
+    }
+
     const userPlaneIds = new Set(userPlaneList.filter(p => p.modelId).map(p => p.modelId));
     const userPlaneNames = new Set(userPlaneList.filter(p => p.modelName).map(p => p.modelName));
     
@@ -124,9 +125,14 @@ export function analyzeRoute(routeData, userPlaneList) {
     );
 
     if (viablePlanes.length === 0) {
-        // This log is very noisy, but useful for debugging
-        // console.log(`[DEBUG] No viable planes for route ${routeData.fromAirportCode} -> ${routeData.toAirportCode}`);
+        if (isDebug) {
+            console.log(`  [DEBUG] Skipping: No planes from your planelist can fly this route.`);
+        }
         return null; 
+    }
+
+    if (isDebug) {
+        console.log(`  [DEBUG] Found ${viablePlanes.length} viable planes: ${viablePlanes.map(p => p.modelName).join(', ')}`);
     }
 
     let bestPlane = null;
@@ -141,7 +147,7 @@ export function analyzeRoute(routeData, userPlaneList) {
     }
 
     if (!bestPlane) {
-        return null;
+        return null; // Should not happen if viablePlanes.length > 0
     }
 
     const F = bestPlane.maxFrequency;
@@ -149,6 +155,9 @@ export function analyzeRoute(routeData, userPlaneList) {
     const routeCost = minCost;
     
     if (F === 0) {
+        if (isDebug) {
+            console.log(`  [DEBUG] Skipping: Best plane ${bestPlane.modelName} has 0 frequency.`);
+        }
         return null;
     }
 
@@ -156,11 +165,23 @@ export function analyzeRoute(routeData, userPlaneList) {
     
     const REVENUE = ticketPrice * F * C;
     const PROFIT = REVENUE - routeCost;
-    const PROFIT_PER_FREQUENCY = Math.round(PROFIT / F); // Round to whole dollar
+    const PROFIT_PER_FREQUENCY = Math.round(PROFIT / F);
 
-    // --- ADDED LOG ---
-    console.log(`  [ANALYSIS] Route ${routeData.fromAirportCode} -> ${routeData.toAirportCode}: Found profit! Score: $${PROFIT_PER_FREQUENCY.toLocaleString()} (Plane: ${bestPlane.modelName})`);
-    // --- END ---
+    // --- (NEW) Detailed logging block ---
+    if (isDebug) {
+        console.log(`  [ANALYSIS] Route ${routeData.fromAirportCode} -> ${routeData.toAirportCode}:`);
+        console.log(`    - Plane: ${bestPlane.modelName}`);
+        console.log(`    - Ticket: $${ticketPrice.toLocaleString()}`);
+        console.log(`    - Freq: ${F}, Capacity: ${C}`);
+        console.log(`    - Revenue (Ticket * F * C): $${Math.round(REVENUE).toLocaleString()}`);
+        console.log(`    - Cost (Weekly): $${Math.round(routeCost).toLocaleString()}`);
+        console.log(`    - Profit (Rev - Cost): $${Math.round(PROFIT).toLocaleString()}`);
+        console.log(`    - SCORE (Profit / F): $${PROFIT_PER_FREQUENCY.toLocaleString()}`);
+    } else if (PROFIT_PER_FREQUENCY > 0) {
+        // This logs any profitable route even when debug is off
+        console.log(`  [ANALYSIS] Route ${routeData.fromAirportCode} -> ${routeData.toAirportCode}: Found profit! Score: $${PROFIT_PER_FREQUENCY.toLocaleString()} (Plane: ${bestPlane.modelName})`);
+    }
+    // --- End New ---
 
     return {
         fromAirportId: routeData.fromAirportId,
@@ -176,9 +197,9 @@ export function analyzeRoute(routeData, userPlaneList) {
 export const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * Main analysis runner.
+ * (UPDATED) Main analysis runner.
  */
-export async function runAnalysis(username, password, baseAirports, userPlaneList, onProgress) {
+export async function runAnalysis(username, password, baseAirports, userPlaneList, isDebug, testLimit, onProgress) {
     const client = createApiClient();
     
     await onProgress('Logging in...');
@@ -186,6 +207,15 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
     
     await onProgress('Fetching global airport list...');
     const allAirports = await fetchAirports(client);
+
+    // --- (NEW) Apply test limit ---
+    let airportsToScan = allAirports;
+    if (testLimit > 0 && testLimit < allAirports.length) {
+        airportsToScan = allAirports.slice(0, testLimit);
+        console.log(`[ANALYSIS] Limiting scan to first ${airportsToScan.length} airports.`);
+    }
+    const totalToScan = airportsToScan.length;
+    // --- End New ---
     
     const airportIdLookup = new Map();
     for (const airport of allAirports) {
@@ -201,20 +231,21 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
         const fromAirport = airportIdLookup.get(fromAirportId);
         
         if (!fromAirport) {
-            console.warn(`[WARN] Skipping base ${baseIata}: Not found in airport list.`); // EDITED
+            console.warn(`[WARN] Skipping base ${baseIata}: Not found in airport list.`);
             await onProgress(`Skipping base ${baseIata}: Not found in airport list.`);
             continue;
         }
 
-        console.log(`[ANALYSIS] === Starting analysis for base: ${baseIata} (${fromAirport.city}) ===`); // ADDED
+        console.log(`[ANALYSIS] === Starting analysis for base: ${baseIata} (${fromAirport.city}) ===`);
 
         const baseProgress = `(Base ${baseIndex}/${baseIatas.length})`;
-        await onProgress(`Analyzing routes from ${baseIata} ${baseProgress}... (0/${allAirports.length})`);
+        await onProgress(`Analyzing routes from ${baseIata} ${baseProgress}... (0/${totalToScan})`);
         
         let routeScores = [];
         let processedCount = 0;
 
-        for (const destAirport of allAirports) {
+        // --- (UPDATED) Loop over airportsToScan ---
+        for (const destAirport of airportsToScan) {
             const toAirportId = destAirport.id;
 
             if (fromAirportId === toAirportId) {
@@ -225,7 +256,8 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
             const routeData = await fetchRouteData(client, airlineId, fromAirportId, toAirportId);
             
             if (routeData) {
-                const analysis = analyzeRoute(routeData, userPlaneList);
+                // --- (UPDATED) Pass isDebug ---
+                const analysis = analyzeRoute(routeData, userPlaneList, isDebug);
                 if (analysis) {
                     analysis.fromIata = fromAirport.iata;
                     analysis.fromCity = fromAirport.city;
@@ -236,21 +268,22 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
             }
             
             processedCount++;
-            if (processedCount % 50 === 0) { // Update progress every 50 airports
-                await onProgress(`Analyzing routes from ${baseIata} ${baseProgress}... (${processedCount}/${allAirports.length})`);
+            if (processedCount % 50 === 0) { 
+                await onProgress(`Analyzing routes from ${baseIata} ${baseProgress}... (${processedCount}/${totalToScan})`);
             }
 
-            await delay(150); // 150ms delay
+            await delay(150);
         }
+        // --- End Update ---
 
         routeScores.sort((a, b) => b.score - a.score);
         allResults.set(baseIata, routeScores.slice(0, 10));
         
-        console.log(`[ANALYSIS] === Completed base ${baseIata}. Found ${routeScores.length} viable routes. Top 10 saved. ===`); // ADDED
+        console.log(`[ANALYSIS] === Completed base ${baseIata}. Found ${routeScores.length} viable routes. Top 10 saved. ===`);
         baseIndex++;
     }
     
-    console.log('[ANALYSIS] All bases complete.'); // ADDED
+    console.log('[ANALYSIS] All bases complete.');
     return allResults;
 }
 
@@ -259,18 +292,18 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
  */
 export async function getAirportByIata(iata) {
     const client = createApiClient(); 
-    console.log(`[API] Fetching airport by IATA: ${iata}`); // ADDED
+    console.log(`[API] Fetching airport by IATA: ${iata}`);
     try {
         const allAirports = await fetchAirports(client);
         const airport = allAirports.find(a => a.iata.toUpperCase() === iata.toUpperCase()) || null;
         if (airport) {
-            console.log(`[API] Found ${iata}: ${airport.name} (ID: ${airport.id})`); // ADDED
+            console.log(`[API] Found ${iata}: ${airport.name} (ID: ${airport.id})`);
         } else {
-            console.warn(`[API] Could not find airport with IATA: ${iata}`); // ADDED
+            console.warn(`[API] Could not find airport with IATA: ${iata}`);
         }
         return airport;
     } catch (error) {
-        console.error("[API] Failed to get airport by IATA:", error); // EDITED
+        console.error("[API] Failed to get airport by IATA:", error);
         return null;
     }
 }
