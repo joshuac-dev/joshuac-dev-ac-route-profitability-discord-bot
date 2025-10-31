@@ -19,7 +19,6 @@ const BASE_INFLIGHT_COST = 20;
 // Constants for our simulation
 const DEFAULT_LOAD_FACTOR = 1.0; // Per spec, "Assume 100% economy seats sold"
 const DEFAULT_QUALITY = 60; // 3-star, a reasonable default
-const MINUTES_PER_WEEK = 10080;
 
 // From "Airport Fees (AFPF)" section
 const airplaneTypeMultiplierMap = {
@@ -86,7 +85,7 @@ export async function fetchAirports(client) {
 }
 
 /**
- * (NEW) Fetches the master list of all airplane models and their base stats.
+ * Fetches the master list of all airplane models and their base stats.
  */
 export async function fetchAirplaneModels(client) {
     console.log('[API] Fetching global airplane model list...');
@@ -130,7 +129,6 @@ export async function fetchRouteData(client, airlineId, fromAirportId, toAirport
 
 /**
  * 1. Calculates Fuel Cost per week
- * Implements the formula from AIRPLANE_COST_CALCULATIONS.md
  */
 function calculateFuelCost(distance, fuelBurn, frequency, loadFactor) {
     let ascend1 = 0, ascend2 = 0, ascend3 = 0, cruise = 0;
@@ -156,18 +154,25 @@ function calculateFuelCost(distance, fuelBurn, frequency, loadFactor) {
 
     const fuelUnitsPerFlight = ascend1 + ascend2 + ascend3 + cruise;
     const loadFactorMultiplier = 0.7 + 0.3 * loadFactor;
-    // * 2 for roundtrip, * frequency for weekly
-    return fuelUnitsPerFlight * 2 * FUEL_UNIT_COST * frequency * loadFactorMultiplier;
+    
+    // --- (FIX 1) ---
+    // The * 2 was a mistake, as the doc's Python example shows the formula
+    // is for *total* weekly fuel, not per-flight.
+    // return fuelUnitsPerFlight * 2 * FUEL_UNIT_COST * frequency * loadFactorMultiplier;
+    return fuelUnitsPerFlight * FUEL_UNIT_COST * frequency * loadFactorMultiplier;
 }
 
 /**
  * 2. Calculates Crew Cost per week
- * Assumes 100% economy configuration
  */
 function calculateCrewCost(capacity, durationMinutes, frequency) {
-    // 1.0 (economy) * capacity * (duration / 60) * 12
     const costPerFlight = 1.0 * capacity * (durationMinutes / 60) * CREW_UNIT_COST;
-    return costPerFlight * 2 * frequency; // * 2 for roundtrip
+    
+    // --- (FIX 2) ---
+    // The * 2 was a mistake, as the doc's Python example shows the formula
+    // is for *total* weekly crew cost.
+    // return costPerFlight * 2 * frequency;
+    return costPerFlight * frequency;
 }
 
 /**
@@ -179,8 +184,8 @@ function calculateAirportFees(capacity, airplaneType, fromAirport, toAirport, ba
 
     const getSlotFee = (airport) => {
         const baseFee = baseSlotFees[Math.min(airport.size, 7)];
-        // Check if IATA is in our baselist
-        const discount = baseAirports[airport.iata] ? 0.8 : 1.0; // 20% base discount (HQ 50% is TODO)
+        // TODO: This doesn't account for 50% HQ discount, only 20% base
+        const discount = baseAirports[airport.iata] ? 0.8 : 1.0; 
         return baseFee * typeMultiplier * discount;
     };
     
@@ -202,7 +207,6 @@ function calculateAirportFees(capacity, airplaneType, fromAirport, toAirport, ba
  * 4. Calculates Depreciation per week
  */
 function calculateDepreciation(price, lifespan) {
-    // price / lifespan (lifespan is in weeks)
     return price / lifespan;
 }
 
@@ -210,8 +214,10 @@ function calculateDepreciation(price, lifespan) {
  * 5. Calculates Maintenance per week
  */
 function calculateMaintenance(capacity) {
-    // baseMaintenanceCostPerAirplane = capacity * 150 (weekly)
-    return capacity * 150;
+    // --- (FIX 3) ---
+    // Your game screenshots prove the multiplier is 100, not 150.
+    // return capacity * 150;
+    return capacity * 100;
 }
 
 /**
@@ -223,7 +229,6 @@ function calculateServiceSupplies(durationMinutes, soldSeats, frequency) {
     const costPerPassenger = BASE_INFLIGHT_COST + (durationCost * durationMinutes / 60);
     const roundtripCostPerPassenger = costPerPassenger * 2;
     
-    // total sold seats per week (one-way)
     const totalPaxPerWeek = soldSeats * frequency;
     
     return roundtripCostPerPassenger * totalPaxPerWeek;
@@ -243,7 +248,7 @@ function getTicketPrice(routeData) {
 }
 
 /**
- * (REBUILT) Analyzes a single route and returns the best profit-per-frequency.
+ * Analyzes a single route and returns the best profit-per-frequency.
  */
 export function analyzeRoute(routeData, userPlaneList, airplaneModelMap, airportMap, baseAirports, isDebug) {
     if (isDebug) {
@@ -308,20 +313,15 @@ export function analyzeRoute(routeData, userPlaneList, airplaneModelMap, airport
             continue;
         }
 
-        // --- (THE FIX) ---
-        // Use the route-specific frequency and duration provided by the plan-link API
         const F = plane.maxFrequency;
         const C = plane.capacity;
-        // Use 'duration' from modelPlanLinkInfo, NOT 'flightMinutesRequired'
         const durationMinutes = plane.duration; 
-        // --- (END FIX) ---
 
         if (F === 0) {
             if (isDebug) console.log(`  [DEBUG] Skipping plane ${plane.modelName}: Frequency is 0.`);
             continue;
         }
 
-        // Per spec: "Assume 100% economy seats sold"
         const soldSeats = C; 
         
         const fuelCost = calculateFuelCost(routeData.distance, planeBaseStats.fuelBurn, F, DEFAULT_LOAD_FACTOR);
