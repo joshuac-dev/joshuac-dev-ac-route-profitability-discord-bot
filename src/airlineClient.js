@@ -4,15 +4,35 @@ import { CookieJar } from 'tough-cookie';
 
 const BASE_URL = 'https://www.airline-club.com';
 
-// --- (NEW) Cost Calculation Constants ---
-// These are standard assumptions based on game mechanics.
-const FUEL_PRICE = 1; // $1 per kg (this can be refined later if we fetch fuel price)
-const CREW_COST_PER_MINUTE = 1.5; // Estimated cost per minute of flight time
-const AIRPORT_FEE_PER_FLIGHT = 5500; // Estimated avg airport fee (landing + takeoff)
-const SERVICE_SUPPLY_COST_PER_PAX = 6; // Estimated cost per passenger
-const MAINTENANCE_COST_PER_MINUTE = 15; // Estimated cost per minute of flight time
-// --- (END NEW) ---
+// --- (NEW) Cost Calculation Constants from AIRPLANE_COST_CALCULATIONS.md ---
+const FUEL_UNIT_COST = 0.0043; //
+const MAX_ASCEND_DISTANCE_1 = 180; //
+const MAX_ASCEND_DISTANCE_2 = 250; //
+const MAX_ASCEND_DISTANCE_3 = 1000; //
+const ASCEND_FUEL_BURN_MULTIPLIER_1 = 32; //
+const ASCEND_FUEL_BURN_MULTIPLIER_2 = 13; //
+const ASCEND_FUEL_BURN_MULTIPLIER_3 = 2; //
 
+const CREW_UNIT_COST = 12; //
+const BASE_INFLIGHT_COST = 20; //
+const DEFAULT_LOAD_FACTOR = 0.8; // Based on documentation example
+const DEFAULT_QUALITY = 60; // 3-star, based on documentation example
+
+// From "Airport Fees (AFPF)" section
+const airplaneTypeMultiplierMap = {
+    "LIGHT": 1,
+    "SMALL": 1,
+    "REGIONAL": 3,
+    "MEDIUM": 8,
+    "LARGE": 12,
+    "X_LARGE": 15,
+    "JUMBO": 18,
+    "SUPERSONIC": 12,
+};
+
+// From "Service Supplies Cost (SSPF)" section
+const durationCostPerHourByStar = [0, 1, 4, 8, 13, 20]; // 0-star to 5-star
+// --- (END NEW) ---
 
 /**
  * Creates a new, sandboxed API client instance with its own cookie jar.
@@ -63,12 +83,11 @@ export async function fetchAirports(client) {
 }
 
 /**
- * Fetches the master list of all airplane models and their base stats.
+ * (NEW) Fetches the master list of all airplane models and their base stats.
  */
 export async function fetchAirplaneModels(client) {
     console.log('[API] Fetching global airplane model list...');
     try {
-        // This is the endpoint you uncovered in `airplane-models Response.txt`
         const response = await client.get(`${BASE_URL}/airplane-models`);
         console.log(`[API] Fetched ${response.data.length} airplane models.`);
         // Convert array to a Map for easy lookup by modelId
@@ -105,68 +124,110 @@ export async function fetchRouteData(client, airlineId, fromAirportId, toAirport
     }
 }
 
+// --- (NEW) REBUILT COST CALCULATION FUNCTIONS ---
+
 /**
- * (REBUILT) Helper to get the weekly cost for a *specific* aircraft model on a route.
- * This now replicates the client-side math.
+ * 1. Calculates Fuel Cost per week
+ * Implements the formula from AIRPLANE_COST_CALCULATIONS.md
  */
-function getCostForModel(routeData, plane, planeBaseStats, isDebug) {
-    if (!planeBaseStats) {
-        if (isDebug) console.log(`    [COST] No base stats found for ${plane.modelName} (ID: ${plane.modelId}). Cannot calculate cost.`);
-        return null; // Cannot calculate cost without base stats
+function calculateFuelCost(distance, fuelBurn, frequency, loadFactor) {
+    let ascend1 = 0, ascend2 = 0, ascend3 = 0, cruise = 0;
+
+    if (distance <= 360) {
+        ascend1 = (distance / 2) * fuelBurn * ASCEND_FUEL_BURN_MULTIPLIER_1;
+        cruise = (distance / 2) * fuelBurn; // descent is 1x fuelBurn
+    } else if (distance <= 500) {
+        ascend1 = 180 * fuelBurn * ASCEND_FUEL_BURN_MULTIPLIER_1;
+        ascend2 = (distance / 2 - 180) * fuelBurn * ASCEND_FUEL_BURN_MULTIPLIER_2;
+        cruise = (distance / 2) * fuelBurn; // descent
+    } else if (distance <= 2000) {
+        ascend1 = 180 * fuelBurn * ASCEND_FUEL_BURN_MULTIPLIER_1;
+        ascend2 = 250 * fuelBurn * ASCEND_FUEL_BURN_MULTIPLIER_2;
+        ascend3 = (distance / 2 - 180 - 250) * fuelBurn * ASCEND_FUEL_BURN_MULTIPLIER_3;
+        cruise = (distance / 2) * fuelBurn; // descent
+    } else { // distance > 2000
+        ascend1 = 180 * fuelBurn * ASCEND_FUEL_BURN_MULTIPLIER_1;
+        ascend2 = 250 * fuelBurn * ASCEND_FUEL_BURN_MULTIPLIER_2;
+        ascend3 = 1000 * fuelBurn * ASCEND_FUEL_BURN_MULTIPLIER_3;
+        cruise = (distance - 180 - 250 - 1000) * fuelBurn; // cruise + descent
     }
 
-    // --- INPUTS ---
-    const distance = routeData.distance; // e.g., 809
-    const flightsPerWeek = plane.maxFrequency; // e.g., 16
-    const flightMinutes = plane.flightMinutesRequired; // e.g., 342
+    const fuelUnitsPerFlight = ascend1 + ascend2 + ascend3 + cruise;
+    const loadFactorMultiplier = 0.7 + 0.3 * loadFactor; //
+    // * 2 for roundtrip
+    return fuelUnitsPerFlight * 2 * FUEL_UNIT_COST * frequency * loadFactorMultiplier;
+}
+
+/**
+ * 2. Calculates Crew Cost per week
+ * Implements the formula from AIRPLANE_COST_CALCULATIONS.md
+ * [cite_start]Assumes 100% economy configuration as per instructions.txt [cite: 1878]
+ */
+function calculateCrewCost(capacity, durationMinutes, frequency) {
+    // 1.0 (economy) * capacity * (duration / 60) * 12 * frequency
+    const costPerFlight = 1.0 * capacity * (durationMinutes / 60) * CREW_UNIT_COST;
+    return costPerFlight * 2 * frequency; // * 2 for roundtrip
+}
+
+/**
+ * 3. Calculates Airport Fees per week
+ * Implements the formula from AIRPLANE_COST_CALCULATIONS.md
+ */
+function calculateAirportFees(capacity, airplaneType, fromAirport, toAirport, baseAirports, frequency) {
+    const baseSlotFees = [0, 50, 50, 80, 150, 250, 350, 500]; // 0-indexed for size
+    const typeMultiplier = airplaneTypeMultiplierMap[airplaneType] || 1; //
+
+    const getSlotFee = (airport) => {
+        const baseFee = baseSlotFees[Math.min(airport.size, 7)];
+        const discount = baseAirports[airport.iata] ? 0.8 : 1.0; // 20% base discount
+        return baseFee * typeMultiplier * discount;
+    };
     
-    const {
-        fuelBurn,       // e.g., 52
-        capacity,       // e.g., 40
-        price,          // e.g., 16200000
-        lifespan,       // e.g., 1820
-    } = planeBaseStats;
+    const getLandingFee = (airport) => {
+        const perSeatFee = airport.size <= 3 ? 3 : airport.size; //
+        return capacity * perSeatFee;
+    };
 
-    // --- CALCULATIONS (per week) ---
+    const fromSlotFee = getSlotFee(fromAirport);
+    const toSlotFee = getSlotFee(toAirport);
+    const fromLandingFee = getLandingFee(fromAirport);
+    const toLandingFee = getLandingFee(toAirport);
+
+    const feePerFlight = fromSlotFee + toSlotFee + fromLandingFee + toLandingFee;
+    return feePerFlight * 2 * frequency; // * 2 for roundtrip
+}
+
+/**
+ * 4. Calculates Depreciation per week
+ * Implements the formula from AIRPLANE_COST_CALCULATIONS.md
+ * We assume the plane is 100% assigned to this route, so assignmentWeight = 1
+ */
+function calculateDepreciation(price, lifespan) {
+    // airplane.price / airplane.lifespan (lifespan is in weeks)
+    return price / lifespan; // This is already a weekly cost
+}
+
+/**
+ * 5. Calculates Maintenance per week
+ * Implements the formula from AIRPLANE_COST_CALCULATIONS.md
+ * We assume 100% assignment, 1.0 factor, and 100% quality for simplicity.
+ */
+function calculateMaintenance(capacity) {
+    // baseMaintenanceCostPerAirplane = capacity * 150 (weekly)
+    return capacity * 150;
+}
+
+/**
+ * 6. Calculates Service Supplies per week
+ * Implements the formula from AIRPLANE_COST_CALCULATIONS.md
+ */
+function calculateServiceSupplies(durationMinutes, soldSeats, frequency) {
+    const star = Math.floor(DEFAULT_QUALITY / 20); //
+    const durationCost = durationCostPerHourByStar[Math.min(star, 5)]; //
+    const costPerPassenger = BASE_INFLIGHT_COST + (durationCost * durationMinutes / 60); //
+    const roundtripCostPerPassenger = costPerPassenger * 2; //
     
-    // 1. Fuel Cost
-    // (fuelBurn * distance * 2 trips * flightsPerWeek * fuelPrice)
-    const fuelCost = fuelBurn * distance * 2 * flightsPerWeek * FUEL_PRICE;
-
-    // 2. Crew Cost
-    // (flightMinutes * flightsPerWeek * crewCostPerMinute)
-    const crewCost = flightMinutes * flightsPerWeek * CREW_COST_PER_MINUTE;
-
-    // 3. Airport Fees
-    // (flightsPerWeek * 2 trips * feePerFlight)
-    const airportFees = flightsPerWeek * 2 * AIRPORT_FEE_PER_FLIGHT;
-
-    // 4. Depreciation
-    // (price / lifespan)
-    const depreciation = price / lifespan;
-
-    // 5. Service Supplies
-    // (capacity * flightsPerWeek * 2 trips * costPerPax)
-    const serviceSupplies = capacity * flightsPerWeek * 2 * SERVICE_SUPPLY_COST_PER_PAX;
-    
-    // 6. Maintenance
-    // (flightMinutes * flightsPerWeek * maintenanceCostPerMinute)
-    const maintenance = flightMinutes * flightsPerWeek * MAINTENANCE_COST_PER_MINUTE;
-
-    const totalCost = fuelCost + crewCost + airportFees + depreciation + serviceSupplies + maintenance;
-
-    if (isDebug) {
-        console.log(`    [COST] Calculatons for ${plane.modelName}:`);
-        console.log(`      - Fuel: $${Math.round(fuelCost).toLocaleString()}`);
-        console.log(`      - Crew: $${Math.round(crewCost).toLocaleString()}`);
-        console.log(`      - Airport: $${Math.round(airportFees).toLocaleString()}`);
-        console.log(`      - Depreciation: $${Math.round(depreciation).toLocaleString()}`);
-        console.log(`      - Supplies: $${Math.round(serviceSupplies).toLocaleString()}`);
-        console.log(`      - Maintenance: $${Math.round(maintenance).toLocaleString()}`);
-        console.log(`      - TOTAL WEEKLY COST: $${Math.round(totalCost).toLocaleString()}`);
-    }
-
-    return totalCost;
+    return roundtripCostPerPassenger * soldSeats * frequency;
 }
 
 /**
@@ -178,16 +239,16 @@ function getTicketPrice(routeData) {
         const competitorPrices = competitors.map(comp => comp.price.economy);
         return Math.min(...competitorPrices);
     } else {
-        return routeData.suggestedPrice.economy;
+        return routeData.suggestedPrice.economy; //
     }
 }
 
 /**
  * (REBUILT) Analyzes a single route and returns the best profit-per-frequency.
  */
-export function analyzeRoute(routeData, userPlaneList, airplaneModelMap, isDebug) {
+export function analyzeRoute(routeData, userPlaneList, airplaneModelMap, airportMap, baseAirports, isDebug) {
     if (isDebug) {
-        console.log(`\n[DEBUG] Analyzing route: ${routeData.fromAirportCode} -> ${routeData.toAirportCode}`);
+        console.log(`\n[DEBUG] Analyzing route: ${routeData.fromAirportCode} -> ${routeData.toAirportCode} (Dist: ${routeData.distance}km)`);
     }
 
     const userPlaneIds = new Set(userPlaneList.filter(p => p.modelId).map(p => p.modelId));
@@ -221,53 +282,71 @@ export function analyzeRoute(routeData, userPlaneList, airplaneModelMap, isDebug
     });
 
     if (viablePlanes.length === 0) {
-        if (isDebug) {
-            console.log(`  [DEBUG] Skipping: No planes from your planelist can fly this route.`);
-        }
+        if (isDebug) console.log(`  [DEBUG] Skipping: No planes from your planelist can fly this route.`);
         return null; 
     }
 
-    if (isDebug) {
-        console.log(`  [DEBUG] Found ${viablePlanes.length} viable planes: ${viablePlanes.map(p => p.modelName).join(', ')}`);
-    }
+    if (isDebug) console.log(`  [DEBUG] Found ${viablePlanes.length} viable planes: ${viablePlanes.map(p => p.modelName).join(', ')}`);
 
     let bestPlaneForRoute = null;
     let maxScore = -Infinity;
     const ticketPrice = getTicketPrice(routeData);
     
-    if (isDebug) {
-        console.log(`  [DEBUG] Using Ticket Price: $${ticketPrice}`);
+    if (isDebug) console.log(`  [DEBUG] Using Ticket Price: $${ticketPrice}`);
+
+    const fromAirport = airportMap.get(routeData.fromAirportId);
+    const toAirport = airportMap.get(routeData.toAirportId);
+
+    if (!fromAirport || !toAirport) {
+        if (isDebug) console.log(`  [DEBUG] Skipping: Could not find airport data for ${routeData.fromAirportCode} or ${routeData.toAirportCode}.`);
+        return null;
     }
 
     for (const plane of viablePlanes) {
-        // Get the *base stats* for this plane from the master list
         const planeBaseStats = airplaneModelMap.get(plane.modelId);
-        
-        // Calculate the *true* weekly cost for this specific plane
-        const routeCost = getCostForModel(routeData, plane, planeBaseStats, isDebug);
-
-        if (routeCost === null) {
-            if (isDebug) console.log(`  [DEBUG] Skipping plane ${plane.modelName}: Could not calculate cost.`);
-            continue; // Skip if we couldn't get stats
-        }
-        
-        const F = plane.maxFrequency;
-        const C = plane.capacity;
-        
-        if (F === 0) {
-            if (isDebug) {
-                console.log(`  [DEBUG] Skipping plane ${plane.modelName}: Frequency is 0.`);
-            }
+        if (!planeBaseStats) {
+            if (isDebug) console.log(`  [DEBUG] Skipping plane ${plane.modelName}: No base stats found in airplane-models map.`);
             continue;
         }
 
-        const REVENUE = ticketPrice * F * C;
-        const PROFIT = REVENUE - routeCost;
+        const F = plane.maxFrequency;
+        const C = plane.capacity; // This is the all-economy capacity
+        const durationMinutes = plane.flightMinutesRequired; //
+        
+        if (F === 0) {
+            if (isDebug) console.log(`  [DEBUG] Skipping plane ${plane.modelName}: Frequency is 0.`);
+            continue;
+        }
+
+        // --- Calculate all 6 cost components ---
+        const soldSeats = Math.floor(C * DEFAULT_LOAD_FACTOR);
+        const fuelCost = calculateFuelCost(routeData.distance, planeBaseStats.fuelBurn, F, DEFAULT_LOAD_FACTOR);
+        const crewCost = calculateCrewCost(C, durationMinutes, F);
+        const airportFees = calculateAirportFees(C, planeBaseStats.airplaneType, fromAirport, toAirport, baseAirports, F);
+        const depreciation = calculateDepreciation(planeBaseStats.price, planeBaseStats.lifespan);
+        const maintenance = calculateMaintenance(C);
+        const serviceSupplies = calculateServiceSupplies(durationMinutes, soldSeats, F);
+
+        const totalWeeklyCost = fuelCost + crewCost + airportFees + depreciation + maintenance + serviceSupplies;
+        
+        // Per spec, revenue is based on 100% economy, but let's use the loadFactor for a realistic REVENUE calc.
+        [cite_start]// Spec: "Assume 100% economy seats only." [cite: 1878] - this means config, not 100% load factor.
+        // We will use the 80% load factor for revenue, consistent with fuel/service calcs.
+        const REVENUE = ticketPrice * soldSeats * F * 2; // * 2 for roundtrip
+        const PROFIT = REVENUE - totalWeeklyCost;
         const SCORE = Math.round(PROFIT / F);
 
         if (isDebug) {
-            console.log(`    [CALC] Final score for ${plane.modelName}:`);
+            console.log(`    [CALC] Plane: ${plane.modelName} (Freq: ${F}, Cap: ${C}, Sold: ${soldSeats})`);
             console.log(`      - Revenue: $${Math.round(REVENUE).toLocaleString()}`);
+            console.log(`      - Costs (Weekly):`);
+            console.log(`        - Fuel:       $${Math.round(fuelCost).toLocaleString()}`);
+            console.log(`        - Crew:       $${Math.round(crewCost).toLocaleString()}`);
+            console.log(`        - Airport:    $${Math.round(airportFees).toLocaleString()}`);
+            console.log(`        - Deprec:     $${Math.round(depreciation).toLocaleString()}`);
+            console.log(`        - Maint:      $${Math.round(maintenance).toLocaleString()}`);
+            console.log(`        - Service:    $${Math.round(serviceSupplies).toLocaleString()}`);
+            console.log(`        - TOTAL COST: $${Math.round(totalWeeklyCost).toLocaleString()}`);
             console.log(`      - Profit: $${Math.round(PROFIT).toLocaleString()}`);
             console.log(`      - SCORE (Profit / F): $${SCORE.toLocaleString()}`);
         }
@@ -279,9 +358,7 @@ export function analyzeRoute(routeData, userPlaneList, airplaneModelMap, isDebug
     }
 
     if (!bestPlaneForRoute) {
-        if (isDebug) {
-            console.log(`  [DEBUG] Skipping: No viable planes had frequency > 0 or valid stats.`);
-        }
+        if (isDebug) console.log(`  [DEBUG] Skipping: No viable planes had frequency > 0 or valid stats.`);
         return null;
     }
 
@@ -316,22 +393,23 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
     await onProgress('Fetching global airport list...');
     const allAirports = await fetchAirports(client);
 
-    // --- (NEW) Fetch the master airplane model list *once* ---
     await onProgress('Fetching global airplane model stats...');
     const airplaneModelMap = await fetchAirplaneModels(client);
-    // --- (END NEW) ---
 
+    // Build lookup maps for airports (for size, iata)
+    const airportIdLookup = new Map();
+    const airportIataLookup = new Map();
+    for (const airport of allAirports) {
+        airportIdLookup.set(airport.id, airport);
+        airportIataLookup.set(airport.iata, airport);
+    }
+    
     let airportsToScan = allAirports;
     if (testLimit > 0 && testLimit < allAirports.length) {
         airportsToScan = allAirports.slice(0, testLimit);
         console.log(`[ANALYSIS] Limiting scan to first ${airportsToScan.length} airports.`);
     }
     const totalToScan = airportsToScan.length;
-    
-    const airportIdLookup = new Map();
-    for (const airport of allAirports) {
-        airportIdLookup.set(airport.id, airport);
-    }
     
     const allResults = new Map();
     const baseIatas = Object.keys(baseAirports);
@@ -348,7 +426,6 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
         }
 
         console.log(`[ANALYSIS] === Starting analysis for base: ${baseIata} (${fromAirport.city}) ===`);
-
         const baseProgress = `(Base ${baseIndex}/${baseIatas.length})`;
         await onProgress(`Analyzing routes from ${baseIata} ${baseProgress}... (0/${totalToScan})`);
         
@@ -366,8 +443,15 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
             const routeData = await fetchRouteData(client, airlineId, fromAirportId, toAirportId);
             
             if (routeData) {
-                // --- (UPDATED) Pass the airplaneModelMap to the analyzer ---
-                const analysis = analyzeRoute(routeData, userPlaneList, airplaneModelMap, isDebug);
+                const analysis = analyzeRoute(
+                    routeData, 
+                    userPlaneList, 
+                    airplaneModelMap, 
+                    airportIdLookup, // Pass the map of all airports
+                    baseAirports, // Pass the user's base list for discounts
+                    isDebug
+                );
+                
                 if (analysis) {
                     analysis.fromIata = fromAirport.iata;
                     analysis.fromCity = fromAirport.city;
