@@ -35,11 +35,15 @@ try {
 }
 
 client.once('ready', c => {
-    console.log(`Ready! Logged in as ${c.user.tag}`);
+    console.log(`[INFO] Ready! Logged in as ${c.user.tag}`);
 });
 
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
+
+    // --- ADDED LOG ---
+    console.log(`[INFO] Received command: /${interaction.commandName} from ${interaction.user.tag}`);
+    // --- END ---
 
     const command = client.commands.get(interaction.commandName);
 
