@@ -4,6 +4,9 @@ import { CookieJar } from 'tough-cookie';
 
 const BASE_URL = 'https://www.airline-club.com';
 
+// (createApiClient, login, fetchAirports, fetchRouteData, getCostForModel, getTicketPrice are unchanged...)
+// ... (previous functions) ...
+
 /**
  * Creates a new, sandboxed API client instance with its own cookie jar.
  */
@@ -109,6 +112,7 @@ function getTicketPrice(routeData) {
     }
 }
 
+
 /**
  * (UPDATED) Analyzes a single route and returns the best profit-per-frequency.
  */
@@ -117,12 +121,34 @@ export function analyzeRoute(routeData, userPlaneList, isDebug) {
         console.log(`\n[DEBUG] Analyzing route: ${routeData.fromAirportCode} -> ${routeData.toAirportCode}`);
     }
 
+    // --- (FIX) Build normalized sets for comparison ---
     const userPlaneIds = new Set(userPlaneList.filter(p => p.modelId).map(p => p.modelId));
-    const userPlaneNames = new Set(userPlaneList.filter(p => p.modelName).map(p => p.modelName));
-    
-    const viablePlanes = routeData.modelPlanLinkInfo.filter(model => 
-        userPlaneIds.has(model.modelId) || userPlaneNames.has(model.modelName)
-    );
+    // Normalize names from state, in case old, non-normalized data exists
+    const userPlaneNames = new Set(userPlaneList.filter(p => p.modelName).map(p => p.modelName.trim().toLowerCase())); 
+    // --- End Fix ---
+
+    if (isDebug) {
+         console.log(`  [DEBUG] Matching against ${userPlaneIds.size} IDs: [${[...userPlaneIds].join(', ')}]`);
+         console.log(`  [DEBUG] Matching against ${userPlaneNames.size} names: ["${[...userPlaneNames].join('", "')}"]`);
+    }
+
+    // --- (FIX) Check API planes against normalized sets ---
+    const viablePlanes = routeData.modelPlanLinkInfo.filter(model => {
+        // Normalize the API's plane name
+        const apiModelName = model.modelName ? model.modelName.trim().toLowerCase() : null;
+        const idMatch = userPlaneIds.has(model.modelId);
+        const nameMatch = apiModelName ? userPlaneNames.has(apiModelName) : false;
+        
+        // --- (NEW) Detailed per-plane debug logging ---
+        if (isDebug) {
+            console.log(`    [DEBUG] Checking API plane: "${model.modelName}" (ID: ${model.modelId})`);
+            console.log(`      -> ID Match (${model.modelId}): ${idMatch}`);
+            console.log(`      -> Name Match ("${apiModelName}"): ${nameMatch}`);
+        }
+        // --- End New ---
+        return idMatch || nameMatch;
+    });
+    // --- End Fix ---
 
     if (viablePlanes.length === 0) {
         if (isDebug) {
@@ -167,7 +193,6 @@ export function analyzeRoute(routeData, userPlaneList, isDebug) {
     const PROFIT = REVENUE - routeCost;
     const PROFIT_PER_FREQUENCY = Math.round(PROFIT / F);
 
-    // --- (NEW) Detailed logging block ---
     if (isDebug) {
         console.log(`  [ANALYSIS] Route ${routeData.fromAirportCode} -> ${routeData.toAirportCode}:`);
         console.log(`    - Plane: ${bestPlane.modelName}`);
@@ -178,10 +203,8 @@ export function analyzeRoute(routeData, userPlaneList, isDebug) {
         console.log(`    - Profit (Rev - Cost): $${Math.round(PROFIT).toLocaleString()}`);
         console.log(`    - SCORE (Profit / F): $${PROFIT_PER_FREQUENCY.toLocaleString()}`);
     } else if (PROFIT_PER_FREQUENCY > 0) {
-        // This logs any profitable route even when debug is off
         console.log(`  [ANALYSIS] Route ${routeData.fromAirportCode} -> ${routeData.toAirportCode}: Found profit! Score: $${PROFIT_PER_FREQUENCY.toLocaleString()} (Plane: ${bestPlane.modelName})`);
     }
-    // --- End New ---
 
     return {
         fromAirportId: routeData.fromAirportId,
@@ -208,14 +231,12 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
     await onProgress('Fetching global airport list...');
     const allAirports = await fetchAirports(client);
 
-    // --- (NEW) Apply test limit ---
     let airportsToScan = allAirports;
     if (testLimit > 0 && testLimit < allAirports.length) {
         airportsToScan = allAirports.slice(0, testLimit);
         console.log(`[ANALYSIS] Limiting scan to first ${airportsToScan.length} airports.`);
     }
     const totalToScan = airportsToScan.length;
-    // --- End New ---
     
     const airportIdLookup = new Map();
     for (const airport of allAirports) {
@@ -244,7 +265,6 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
         let routeScores = [];
         let processedCount = 0;
 
-        // --- (UPDATED) Loop over airportsToScan ---
         for (const destAirport of airportsToScan) {
             const toAirportId = destAirport.id;
 
@@ -256,7 +276,6 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
             const routeData = await fetchRouteData(client, airlineId, fromAirportId, toAirportId);
             
             if (routeData) {
-                // --- (UPDATED) Pass isDebug ---
                 const analysis = analyzeRoute(routeData, userPlaneList, isDebug);
                 if (analysis) {
                     analysis.fromIata = fromAirport.iata;
@@ -274,7 +293,6 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
 
             await delay(150);
         }
-        // --- End Update ---
 
         routeScores.sort((a, b) => b.score - a.score);
         allResults.set(baseIata, routeScores.slice(0, 10));
