@@ -21,15 +21,18 @@ export async function execute(interaction) {
     if (subcommand === 'baselist_view') {
         const iatas = Object.keys(state.baseAirports);
         if (iatas.length === 0) {
-            return interaction.reply({ content: 'Your baselist is currently empty.', ephemeral: true });
+            // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+            return interaction.reply({ content: 'Your baselist is currently empty.', flags: 64 });
         }
         
         const baseListString = iatas.map(iata => `• ${iata} (ID: ${state.baseAirports[iata]})`).join('\n');
         
-        return interaction.reply({ content: `**Current Baselist:**\n${baseListString}`, ephemeral: true });
+        // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+        return interaction.reply({ content: `**Current Baselist:**\n${baseListString}`, flags: 64 });
     
     } else if (subcommand === 'baselist_add') {
-        await interaction.deferReply({ ephemeral: true });
+        // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+        await interaction.deferReply({ flags: 64 });
         const iata = interaction.options.getString('iata').toUpperCase();
         
         if (state.baseAirports[iata]) {
@@ -56,12 +59,14 @@ export async function execute(interaction) {
         const iata = interaction.options.getString('iata').toUpperCase();
 
         if (!state.baseAirports[iata]) {
-            return interaction.reply({ content: `Airport ${iata} is not in your baselist.`, ephemeral: true });
+            // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+            return interaction.reply({ content: `Airport ${iata} is not in your baselist.`, flags: 64 });
         }
         
         delete state.baseAirports[iata];
         await saveState(state);
         
-        return interaction.reply({ content: `Removed ${iata} from your baselist.`, ephemeral: true });
+        // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+        return interaction.reply({ content: `Removed ${iata} from your baselist.`, flags: 64 });
     }
 }
