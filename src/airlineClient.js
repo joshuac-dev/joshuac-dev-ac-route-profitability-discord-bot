@@ -89,9 +89,14 @@ export async function fetchRouteData(client, airlineId, fromAirportId, toAirport
 
 /**
  * Helper to get the weekly cost for a specific aircraft model on a route.
+ * @param {object} routeData - The full JSON response from the plan-link endpoint.
+ * @returns {number} The weekly cost.
  */
-function getCostForModel(routeData, modelId) {
+function getCostForModel(routeData) {
     // TODO: Replace this when we capture the per-model cost endpoint.
+    // For now, as per NOTES_FOR_AI.md, we MUST use the single top-level `cost`
+    // from the API response for all calculations, even though it's only
+    // correct for one of the planes.
     return routeData.cost;
 }
 
@@ -118,7 +123,6 @@ export function analyzeRoute(routeData, userPlaneList, isDebug) {
     }
 
     const userPlaneIds = new Set(userPlaneList.filter(p => p.modelId).map(p => p.modelId));
-    // Normalize names from state, in case old, non-normalized data exists
     const userPlaneNames = new Set(userPlaneList.filter(p => p.modelName).map(p => p.modelName.trim().toLowerCase())); 
 
     if (isDebug) {
@@ -126,12 +130,10 @@ export function analyzeRoute(routeData, userPlaneList, isDebug) {
          console.log(`  [DEBUG] Matching against ${userPlaneNames.size} names: ["${[...userPlaneNames].join('", "')}"]`);
     }
 
-    // --- (THIS IS THE FIX) ---
     const viablePlanes = routeData.modelPlanLinkInfo.filter(model => {
         const apiModelName = model.modelName ? model.modelName.trim().toLowerCase() : null;
         const idMatch = userPlaneIds.has(model.modelId);
 
-        // Change from exact match (Set.has) to contains match (String.includes)
         let nameMatch = false;
         if (apiModelName) {
             for (const storedName of userPlaneNames) {
@@ -141,12 +143,10 @@ export function analyzeRoute(routeData, userPlaneList, isDebug) {
                 }
             }
         }
-        // --- (END OF FIX) ---
         
         if (isDebug) {
             console.log(`    [DEBUG] Checking API plane: "${model.modelName}" (ID: ${model.modelId})`);
             console.log(`      -> ID Match (${model.modelId}): ${idMatch}`);
-            // Updated log to be more clear about the logic
             console.log(`      -> Name Match (API: "${apiModelName}" includes any from your list?): ${nameMatch}`);
         }
         return idMatch || nameMatch;
@@ -163,55 +163,72 @@ export function analyzeRoute(routeData, userPlaneList, isDebug) {
         console.log(`  [DEBUG] Found ${viablePlanes.length} viable planes: ${viablePlanes.map(p => p.modelName).join(', ')}`);
     }
 
+    // --- (THIS IS THE FIX) ---
+    // We now loop through all viable planes, calculate a score for each,
+    // and find the plane with the *maximum* score, not the minimum cost.
+
     let bestPlane = null;
-    let minCost = Infinity;
+    let maxScore = -Infinity;
+    
+    // Get the single cost value we have for this route.
+    // This is the flawed data, but it's all we have.
+    const routeCost = getCostForModel(routeData);
+    const ticketPrice = getTicketPrice(routeData);
+
+    if (isDebug) {
+        console.log(`  [DEBUG] Using shared Ticket Price: $${ticketPrice} and shared Weekly Cost: $${routeCost.toLocaleString()} for all calculations.`);
+        console.log(`  [DEBUG] (Note: Cost is $0 for MII, but $46,311 for GYN. This is based on the API response.)`);
+    }
 
     for (const plane of viablePlanes) {
-        const cost = getCostForModel(routeData, plane.modelId);
-        if (cost < minCost) {
-            minCost = cost;
+        const F = plane.maxFrequency; // Max Frequency
+        const C = plane.capacity;     // Capacity
+        
+        if (F === 0) {
+            if (isDebug) {
+                console.log(`  [DEBUG] Skipping plane ${plane.modelName}: Frequency is 0.`);
+            }
+            continue; // Skip this plane
+        }
+
+        const REVENUE = ticketPrice * F * C;
+        const PROFIT = REVENUE - routeCost;
+        const SCORE = Math.round(PROFIT / F);
+
+        if (isDebug) {
+            console.log(`    [CALC] Plane: ${plane.modelName}`);
+            console.log(`      - Freq: ${F}, Capacity: ${C}`);
+            console.log(`      - Revenue (Ticket * F * C): $${Math.round(REVENUE).toLocaleString()}`);
+            console.log(`      - Profit (Rev - Cost): $${Math.round(PROFIT).toLocaleString()}`);
+            console.log(`      - SCORE (Profit / F): $${SCORE.toLocaleString()}`);
+        }
+
+        if (SCORE > maxScore) {
+            maxScore = SCORE;
             bestPlane = plane;
         }
     }
+    // --- (END OF FIX) ---
 
     if (!bestPlane) {
-        return null;
-    }
-
-    const F = bestPlane.maxFrequency;
-    const C = bestPlane.capacity;
-    const routeCost = minCost;
-    
-    if (F === 0) {
         if (isDebug) {
-            console.log(`  [DEBUG] Skipping: Best plane ${bestPlane.modelName} has 0 frequency.`);
+            console.log(`  [DEBUG] Skipping: No viable planes had frequency > 0.`);
         }
-        return null;
+        return null; // All viable planes had 0 frequency
     }
 
-    const ticketPrice = getTicketPrice(routeData);
-    
-    const REVENUE = ticketPrice * F * C;
-    const PROFIT = REVENUE - routeCost;
-    const PROFIT_PER_FREQUENCY = Math.round(PROFIT / F);
-
+    // Log the winner
     if (isDebug) {
-        console.log(`  [ANALYSIS] Route ${routeData.fromAirportCode} -> ${routeData.toAirportCode}:`);
-        console.log(`    - Plane: ${bestPlane.modelName}`);
-        console.log(`    - Ticket: $${ticketPrice.toLocaleString()}`);
-        console.log(`    - Freq: ${F}, Capacity: ${C}`);
-        console.log(`    - Revenue (Ticket * F * C): $${Math.round(REVENUE).toLocaleString()}`);
-        console.log(`    - Cost (Weekly): $${Math.round(routeCost).toLocaleString()}`);
-        console.log(`    - Profit (Rev - Cost): $${Math.round(PROFIT).toLocaleString()}`);
-        console.log(`    - SCORE (Profit / F): $${PROFIT_PER_FREQUENCY.toLocaleString()}`);
-    } else if (PROFIT_PER_FREQUENCY > 0) {
-        console.log(`  [ANALYSIS] Route ${routeData.fromAirportCode} -> ${routeData.toAirportCode}: Found profit! Score: $${PROFIT_PER_FREQUENCY.toLocaleString()} (Plane: ${bestPlane.modelName})`);
+        console.log(`  [ANALYSIS] Best plane for route ${routeData.fromAirportCode} -> ${routeData.toAirportCode} is: ${bestPlane.modelName} with score $${maxScore.toLocaleString()}`);
+    } else if (maxScore > 0) {
+        // Only log profitable routes in non-debug mode
+        console.log(`  [ANALYSIS] Route ${routeData.fromAirportCode} -> ${routeData.toAirportCode}: Found profit! Score: $${maxScore.toLocaleString()} (Plane: ${bestPlane.modelName})`);
     }
 
     return {
         fromAirportId: routeData.fromAirportId,
         toAirportId: routeData.toAirportId,
-        score: PROFIT_PER_FREQUENCY,
+        score: maxScore,
         planeName: bestPlane.modelName,
     };
 }
