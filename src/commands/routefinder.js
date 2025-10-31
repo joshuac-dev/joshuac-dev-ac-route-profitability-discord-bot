@@ -34,7 +34,6 @@ export async function execute(interaction) {
     if (handler) {
         await handler(interaction);
     } else {
-        // --- (FIX) Using flags: 64 instead of ephemeral: true ---
         await interaction.reply({ content: 'Unknown subcommand.', flags: 64 });
     }
 }
