@@ -1,14 +1,14 @@
 # Routefinder Discord Bot
 
-This is a Discord bot for analyzing profitable flight routes in the game Airline Club, built according to the user's specifications. It interacts directly with the game's JSON APIs, without any browser automation.
+[cite_start]This is a Discord bot for analyzing profitable flight routes in the game Airline Club. [cite_start]It interacts directly with the game's JSON APIs, without any browser automation[cite: 50].
 
 ## Features
 
--   Analyzes profit-per-frequency for routes from your base airports.
--   Ranks and displays the top 10 most profitable routes per base.
--   Uses your specified `planelist` to only consider planes you own.
--   Calculates profit based on lowest competitor pricing or suggested price.
--   Manages state (accounts, planelist, baselist) in a `bot_state.json` file.
+-   [cite_start]Analyzes profit-per-frequency for routes from your base airports[cite: 47].
+-   [cite_start]Ranks and displays the top 10 most profitable routes per base[cite: 47, 48].
+-   [cite_start]Uses your specified `planelist` to only consider planes you own[cite: 47].
+-   [cite_start]Calculates profit based on lowest competitor pricing or suggested price[cite: 47].
+-   [cite_start]Manages state (accounts, planelist, baselist) in a `bot_state.json` file.
 
 ## Setup
 
@@ -25,7 +25,7 @@ This is a Discord bot for analyzing profitable flight routes in the game Airline
 3.  Go to the "Bot" tab.
     -   Click "Add Bot".
     -   Click "Reset Token" and **copy the token**. You will need this for the `.env` file.
-    -   Enable the `MESSAGE_CONTENT` Privileged Gateway Intent.
+    -   Enable the `MESSAGE_CONTENT` Privileged Gateway Intent (if you plan to add non-slash commands later).
 4.  Go to the "OAuth2" -> "URL Generator" tab.
     -   Select the `bot` and `application.commands` scopes.
     -   In "Bot Permissions", select `Send Messages`.
@@ -59,7 +59,7 @@ This is a Discord bot for analyzing profitable flight routes in the game Airline
     ```bash
     echo '{ "accounts": {}, "planeList": [], "baseAirports": {} }' > bot_state.json
     ```
-    Make sure the bot has permission to write to this file.
+    Make sure the bot has permission to write to this file (`chmod 664 bot_state.json`).
 
 ### 4. Deploy Slash Commands
 
