@@ -18,7 +18,7 @@ const BASE_INFLIGHT_COST = 20;
 
 // Constants for our simulation
 const DEFAULT_LOAD_FACTOR = 1.0; // Per spec, "Assume 100% economy seats sold"
-const DEFAULT_QUALITY = 60; // 3-star, a reasonable default
+const DEFAULT_QUALITY = 20; // (FIX) Changed from 60 to 20 to match game's service cost
 
 // From "Airport Fees (AFPF)" section
 const airplaneTypeMultiplierMap = {
@@ -156,9 +156,8 @@ function calculateFuelCost(distance, fuelBurn, frequency, loadFactor) {
     const loadFactorMultiplier = 0.7 + 0.3 * loadFactor;
     
     // --- (FIX 1) ---
-    // The * 2 was a mistake, as the doc's Python example shows the formula
-    // is for *total* weekly fuel, not per-flight.
-    // return fuelUnitsPerFlight * 2 * FUEL_UNIT_COST * frequency * loadFactorMultiplier;
+    // Removed * 2 multiplier. The formula seems to be for total weekly fuel burn,
+    // not one-way.
     return fuelUnitsPerFlight * FUEL_UNIT_COST * frequency * loadFactorMultiplier;
 }
 
@@ -166,12 +165,11 @@ function calculateFuelCost(distance, fuelBurn, frequency, loadFactor) {
  * 2. Calculates Crew Cost per week
  */
 function calculateCrewCost(capacity, durationMinutes, frequency) {
+    // 1.0 (economy) * capacity * (duration / 60) * 12
     const costPerFlight = 1.0 * capacity * (durationMinutes / 60) * CREW_UNIT_COST;
     
     // --- (FIX 2) ---
-    // The * 2 was a mistake, as the doc's Python example shows the formula
-    // is for *total* weekly crew cost.
-    // return costPerFlight * 2 * frequency;
+    // Removed * 2 multiplier. This formula seems to be for total weekly crew cost.
     return costPerFlight * frequency;
 }
 
@@ -207,6 +205,9 @@ function calculateAirportFees(capacity, airplaneType, fromAirport, toAirport, ba
  * 4. Calculates Depreciation per week
  */
 function calculateDepreciation(price, lifespan) {
+    // TODO: This is still slightly off from game numbers.
+    // The game is likely using a discounted price that we don't have access to.
+    // Using the base price is the best we can do for now.
     return price / lifespan;
 }
 
@@ -216,7 +217,6 @@ function calculateDepreciation(price, lifespan) {
 function calculateMaintenance(capacity) {
     // --- (FIX 3) ---
     // Your game screenshots prove the multiplier is 100, not 150.
-    // return capacity * 150;
     return capacity * 100;
 }
 
@@ -224,11 +224,13 @@ function calculateMaintenance(capacity) {
  * 6. Calculates Service Supplies per week
  */
 function calculateServiceSupplies(durationMinutes, soldSeats, frequency) {
+    // --- (FIX 4) ---
+    // Changed DEFAULT_QUALITY to 20, which makes star = 1
     const star = Math.floor(DEFAULT_QUALITY / 20);
-    const durationCost = durationCostPerHourByStar[Math.min(star, 5)];
+    const durationCost = durationCostPerHourByStar[Math.min(star, 5)]; // = 1
+    
     const costPerPassenger = BASE_INFLIGHT_COST + (durationCost * durationMinutes / 60);
     const roundtripCostPerPassenger = costPerPassenger * 2;
-    
     const totalPaxPerWeek = soldSeats * frequency;
     
     return roundtripCostPerPassenger * totalPaxPerWeek;
