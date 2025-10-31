@@ -1,15 +1,12 @@
-import { SlashCommandBuilder } from '@discordjs/builders';
 import { loadState } from '../stateStore.js';
 import { runAnalysis } from '../airlineClient.js';
 import { EmbedBuilder } from 'discord.js';
 
-export const data = new SlashCommandBuilder()
-    .setName('run')
-    .setDescription('Run the route profitability analysis')
-    .addStringOption(option =>
-        option.setName('account')
-            .setDescription('The name of the account to use (from bot_state.json)')
-            .setRequired(true));
+export const subcommands = (builder) =>
+    builder.addSubcommand(sub => sub
+        .setName('run')
+        .setDescription('Run the route profitability analysis')
+        .addStringOption(opt => opt.setName('account').setDescription('The name of the account to use').setRequired(true)));
 
 export async function execute(interaction) {
     await interaction.reply({ content: 'Starting analysis... This may take a long time. 🚀', ephemeral: true });
@@ -19,24 +16,23 @@ export async function execute(interaction) {
 
     const account = state.accounts[accountName];
     if (!account) {
-        return interaction.followUp({ content: `Error: Account "${accountName}" not found in configuration. Add it to \`bot_state.json\` first.`, ephemeral: true });
+        return interaction.followUp({ content: `Error: Account "${accountName}" not found in \`bot_state.json\`.`, ephemeral: true });
     }
     
-    if (Object.keys(state.baseAirports).length === 0) {
-        return interaction.followUp({ content: 'Error: Your baselist is empty. Add airports with `/baselist add`.', ephemeral: true });
+    if (!state.baseAirports || Object.keys(state.baseAirports).length === 0) {
+        return interaction.followUp({ content: 'Error: Your baselist is empty. Add airports with `/routefinder baselist_add`.', ephemeral: true });
     }
     
-    if (state.planeList.length === 0) {
-        return interaction.followUp({ content: 'Error: Your planelist is empty. Add planes with `/planelist add`.', ephemeral: true });
+    if (!state.planeList || state.planeList.length === 0) {
+        return interaction.followUp({ content: 'Error: Your planelist is empty. Add planes with `/routefinder planelist_add`.', ephemeral: true });
     }
 
-    // Function to send progress updates
     const onProgress = async (message) => {
         try {
-            // Use followUp for the first message, then edit it
+            // Send all progress updates as new follow-ups
             await interaction.followUp({ content: message, ephemeral: true });
         } catch (error) {
-            console.log('Progress update failed (likely editing too fast), trying again.');
+            console.log('Progress update failed (likely editing too fast).');
         }
     };
 
@@ -68,6 +64,7 @@ export async function execute(interaction) {
                 .setDescription(formattedResults)
                 .setTimestamp();
             
+            // Send results to the channel where command was run
             await interaction.channel.send({ embeds: [embed] });
         }
 
