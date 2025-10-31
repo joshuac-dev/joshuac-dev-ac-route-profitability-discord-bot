@@ -255,7 +255,7 @@ export function analyzeRoute(routeData, userPlaneList, airplaneModelMap, airport
 
     if (isDebug) {
          console.log(`  [DEBUG] Matching against ${userPlaneIds.size} IDs: [${[...userPlaneIds].join(', ')}]`);
-         console.log(`  [DEBUG] Matching against ${userPlaneNames.size} names: ["${[...userPlaneNames.join('", "')}"]`);
+         console.log(`  [DEBUG] Matching against ${userPlaneNames.size} names: ["${[...userPlaneNames].join('", "')}"]`);
     }
 
     const viablePlanes = routeData.modelPlanLinkInfo.filter(model => {
@@ -310,11 +310,10 @@ export function analyzeRoute(routeData, userPlaneList, airplaneModelMap, airport
 
         // --- (THE FIX) ---
         // Use the route-specific frequency and duration provided by the plan-link API
-        // This was the error in the previous step. We must use the API's provided
-        // flight times, not recalculate them.
         const F = plane.maxFrequency;
         const C = plane.capacity;
-        const durationMinutes = plane.duration; // One-way flight time in minutes
+        // Use 'duration' from modelPlanLinkInfo, NOT 'flightMinutesRequired'
+        const durationMinutes = plane.duration; 
         // --- (END FIX) ---
 
         if (F === 0) {
