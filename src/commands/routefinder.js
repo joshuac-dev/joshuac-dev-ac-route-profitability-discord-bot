@@ -28,16 +28,13 @@ const handlers = {
 
 export async function execute(interaction) {
     const subcommand = interaction.options.getSubcommand();
-    
-    // --- ADDED LOG ---
     console.log(`[INFO] Handling subcommand: ${subcommand}`);
-    // --- END ---
-
     const handler = handlers[subcommand];
     
     if (handler) {
         await handler(interaction);
     } else {
-        await interaction.reply({ content: 'Unknown subcommand.', ephemeral: true });
+        // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+        await interaction.reply({ content: 'Unknown subcommand.', flags: 64 });
     }
 }
