@@ -8,7 +8,8 @@ This is a Discord bot for analyzing profitable flight routes in the game Airline
 -   Ranks and displays the top 10 most profitable routes per base.
 -   Uses your specified `planelist` to only consider planes you own.
 -   Calculates profit based on lowest competitor pricing or suggested price.
--   Manages state (accounts, planelist, baselist) in a `bot_state.json` file.
+-   Manages state (accounts, account-specific planelist, account-specific baselist) in a `bot_state.json` file.
+-   **Account-specific lists**: Each account has its own separate planelist and baselist, so you don't need to empty and reload lists when switching accounts.
 
 ## Setup
 
@@ -64,7 +65,7 @@ This is a Discord bot for analyzing profitable flight routes in the game Airline
     ```
 6.  Create the state file with default empty state:
     ```bash
-    echo '{ "accounts": {}, "planeList": [], "baseAirports": {} }' > bot_state.json
+    echo '{ "accounts": { "main": { "username": "your-email@example.com", "password": "your-game-password", "planeList": [], "baseAirports": {} } } }' > bot_state.json
     ```
     Make sure the bot has permission to write to this file (`chmod 664 bot_state.json`).
 

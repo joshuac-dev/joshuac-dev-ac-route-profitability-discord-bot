@@ -34,17 +34,25 @@ export async function execute(interaction) {
         return interaction.followUp({ content: `Error: Account "${accountName}" not found in \`bot_state.json\`.`, flags: 64 });
     }
     
-    console.log('[RUN] Validating state: Checking for baselist and planelist.');
-    if (!state.baseAirports || Object.keys(state.baseAirports).length === 0) {
-        console.error('[RUN] Error: Baselist is empty.');
-        // --- (FIX) Using flags: 64 instead of ephemeral: true ---
-        return interaction.followUp({ content: 'Error: Your baselist is empty. Add airports with `/routefinder baselist_add`.', flags: 64 });
+    // Ensure account has baseAirports and planeList properties
+    if (!account.baseAirports) {
+        account.baseAirports = {};
+    }
+    if (!account.planeList) {
+        account.planeList = [];
     }
     
-    if (!state.planeList || state.planeList.length === 0) {
+    console.log('[RUN] Validating state: Checking for baselist and planelist.');
+    if (!account.baseAirports || Object.keys(account.baseAirports).length === 0) {
+        console.error('[RUN] Error: Baselist is empty.');
+        // --- (FIX) Using flags: 64 instead of ephemeral: true ---
+        return interaction.followUp({ content: `Error: The baselist for account "${accountName}" is empty. Add airports with \`/routefinder baselist_add\`.`, flags: 64 });
+    }
+    
+    if (!account.planeList || account.planeList.length === 0) {
         console.error('[RUN] Error: Planelist is empty.');
         // --- (FIX) Using flags: 64 instead of ephemeral: true ---
-        return interaction.followUp({ content: 'Error: Your planelist is empty. Add planes with `/routefinder planelist_add`.', flags: 64 });
+        return interaction.followUp({ content: `Error: The planelist for account "${accountName}" is empty. Add planes with \`/routefinder planelist_add\`.`, flags: 64 });
     }
     console.log('[RUN] State validated. Starting analysis client.');
 
@@ -62,8 +70,8 @@ export async function execute(interaction) {
         const results = await runAnalysis(
             account.username,
             account.password,
-            state.baseAirports,
-            state.planeList,
+            account.baseAirports,
+            account.planeList,
             isDebug,
             testLimit,
             onProgress

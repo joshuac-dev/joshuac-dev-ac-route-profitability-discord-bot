@@ -5,38 +5,57 @@ export const subcommands = (builder) =>
     builder.addSubcommand(sub => sub
         .setName('baselist_add')
         .setDescription('Add a base airport by its IATA code')
+        .addStringOption(opt => opt.setName('account').setDescription('The name of the account').setRequired(true))
         .addStringOption(opt => opt.setName('iata').setDescription('The 3-letter IATA code (e.g., IST)').setRequired(true)))
     .addSubcommand(sub => sub
         .setName('baselist_delete')
         .setDescription('Remove a base airport by its IATA code')
+        .addStringOption(opt => opt.setName('account').setDescription('The name of the account').setRequired(true))
         .addStringOption(opt => opt.setName('iata').setDescription('The 3-letter IATA code (e.g., IST)').setRequired(true)))
     .addSubcommand(sub => sub
         .setName('baselist_view')
-        .setDescription('View all airports currently in your baselist'));
+        .setDescription('View all airports currently in your baselist')
+        .addStringOption(opt => opt.setName('account').setDescription('The name of the account').setRequired(true)));
 
 export async function execute(interaction) {
     const subcommand = interaction.options.getSubcommand();
+    const accountName = interaction.options.getString('account');
     const state = await loadState();
 
+    // Validate account exists
+    if (!state.accounts[accountName]) {
+        return interaction.reply({ 
+            content: `Error: Account "${accountName}" not found in \`bot_state.json\`.`, 
+            flags: 64 
+        });
+    }
+
+    // Ensure account has baseAirports property
+    if (!state.accounts[accountName].baseAirports) {
+        state.accounts[accountName].baseAirports = {};
+    }
+
+    const baseAirports = state.accounts[accountName].baseAirports;
+
     if (subcommand === 'baselist_view') {
-        const iatas = Object.keys(state.baseAirports);
+        const iatas = Object.keys(baseAirports);
         if (iatas.length === 0) {
             // --- (FIX) Using flags: 64 instead of ephemeral: true ---
-            return interaction.reply({ content: 'Your baselist is currently empty.', flags: 64 });
+            return interaction.reply({ content: `The baselist for account "${accountName}" is currently empty.`, flags: 64 });
         }
         
-        const baseListString = iatas.map(iata => `• ${iata} (ID: ${state.baseAirports[iata]})`).join('\n');
+        const baseListString = iatas.map(iata => `• ${iata} (ID: ${baseAirports[iata]})`).join('\n');
         
         // --- (FIX) Using flags: 64 instead of ephemeral: true ---
-        return interaction.reply({ content: `**Current Baselist:**\n${baseListString}`, flags: 64 });
+        return interaction.reply({ content: `**Baselist for account "${accountName}":**\n${baseListString}`, flags: 64 });
     
     } else if (subcommand === 'baselist_add') {
         // --- (FIX) Using flags: 64 instead of ephemeral: true ---
         await interaction.deferReply({ flags: 64 });
         const iata = interaction.options.getString('iata').toUpperCase();
         
-        if (state.baseAirports[iata]) {
-            return interaction.editReply(`Airport ${iata} is already in your baselist.`);
+        if (baseAirports[iata]) {
+            return interaction.editReply(`Airport ${iata} is already in the baselist for account "${accountName}".`);
         }
 
         try {
@@ -45,10 +64,10 @@ export async function execute(interaction) {
                 return interaction.editReply(`Could not find an airport with IATA code ${iata}.`);
             }
             
-            state.baseAirports[iata] = airport.id;
+            baseAirports[iata] = airport.id;
             await saveState(state);
             
-            return interaction.editReply(`Added ${iata} (${airport.name}, ${airport.city}) to your baselist.`);
+            return interaction.editReply(`Added ${iata} (${airport.name}, ${airport.city}) to the baselist for account "${accountName}".`);
 
         } catch (error) {
             console.error('Error in baselist add:', error);
@@ -58,15 +77,15 @@ export async function execute(interaction) {
     } else if (subcommand === 'baselist_delete') {
         const iata = interaction.options.getString('iata').toUpperCase();
 
-        if (!state.baseAirports[iata]) {
+        if (!baseAirports[iata]) {
             // --- (FIX) Using flags: 64 instead of ephemeral: true ---
-            return interaction.reply({ content: `Airport ${iata} is not in your baselist.`, flags: 64 });
+            return interaction.reply({ content: `Airport ${iata} is not in the baselist for account "${accountName}".`, flags: 64 });
         }
         
-        delete state.baseAirports[iata];
+        delete baseAirports[iata];
         await saveState(state);
         
         // --- (FIX) Using flags: 64 instead of ephemeral: true ---
-        return interaction.reply({ content: `Removed ${iata} from your baselist.`, flags: 64 });
+        return interaction.reply({ content: `Removed ${iata} from the baselist for account "${accountName}".`, flags: 64 });
     }
 }
