@@ -73,7 +73,7 @@ export async function loadState(forceRefresh = false) {
         }
         
         // Ensure each account has the required properties
-        for (const accountName in stateCache.accounts) {
+        for (const accountName of Object.keys(stateCache.accounts)) {
             if (!stateCache.accounts[accountName].planeList) {
                 stateCache.accounts[accountName].planeList = [];
             }
