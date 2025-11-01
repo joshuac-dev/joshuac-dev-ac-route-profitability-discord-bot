@@ -57,7 +57,7 @@ export async function execute(interaction) {
                 // --- (FIX) Using flags: 64 instead of ephemeral: true ---
                 return interaction.reply({ content: `Plane with ID ${entry.modelId} is already in the list for account "${accountName}".`, flags: 64 });
             }
-            planeList.push(entry);
+            state.accounts[accountName].planeList = [...planeList, entry];
             addedMsg = `Added plane with ID: ${entry.modelId}`;
         } else {
             const normalizedName = planeIdentifier.trim().toLowerCase();
@@ -66,13 +66,13 @@ export async function execute(interaction) {
                 // --- (FIX) Using flags: 64 instead of ephemeral: true ---
                 return interaction.reply({ content: `Plane with name "${normalizedName}" is already in the list for account "${accountName}".`, flags: 64 });
             }
-            planeList.push(entry);
+            state.accounts[accountName].planeList = [...planeList, entry];
             addedMsg = `Added plane with name: "${planeIdentifier}" (stored as: ${normalizedName})`;
         }
         
         await saveState(state);
         // --- (FIX) Using flags: 64 instead of ephemeral: true ---
-        return interaction.reply({ content: `${addedMsg} for account "${accountName}". The planelist now has ${planeList.length} entries.`, flags: 64 });
+        return interaction.reply({ content: `${addedMsg} for account "${accountName}". The planelist now has ${state.accounts[accountName].planeList.length} entries.`, flags: 64 });
 
     } else if (subcommand === 'planelist_delete') {
         const planeIdentifier = interaction.options.getString('plane');
@@ -81,12 +81,10 @@ export async function execute(interaction) {
 
         if (isId) {
             const modelId = parseInt(planeIdentifier, 10);
-            const filtered = planeList.filter(p => p.modelId !== modelId);
-            state.accounts[accountName].planeList = filtered;
+            state.accounts[accountName].planeList = planeList.filter(p => p.modelId !== modelId);
         } else {
             const normalizedName = planeIdentifier.trim().toLowerCase();
-            const filtered = planeList.filter(p => p.modelName !== normalizedName);
-            state.accounts[accountName].planeList = filtered;
+            state.accounts[accountName].planeList = planeList.filter(p => p.modelName !== normalizedName);
         }
 
         if (state.accounts[accountName].planeList.length === originalLength) {

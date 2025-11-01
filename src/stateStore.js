@@ -65,9 +65,7 @@ export async function loadState(forceRefresh = false) {
                 delete stateCache.planeList;
                 delete stateCache.baseAirports;
                 
-                // Save the migrated state
-                await saveState(stateCache);
-                console.log('[STATE] Migration complete and saved.');
+                console.log('[STATE] Migration complete. State will be saved on next saveState() call.');
             } else {
                 // Clean up empty global lists
                 delete stateCache.planeList;
