@@ -29,11 +29,6 @@ export async function execute(interaction) {
         });
     }
 
-    // Ensure account has planeList property
-    if (!state.accounts[accountName].planeList) {
-        state.accounts[accountName].planeList = [];
-    }
-
     const planeList = state.accounts[accountName].planeList;
 
     if (subcommand === 'planelist_view') {
@@ -86,10 +81,12 @@ export async function execute(interaction) {
 
         if (isId) {
             const modelId = parseInt(planeIdentifier, 10);
-            state.accounts[accountName].planeList = planeList.filter(p => p.modelId !== modelId);
+            const filtered = planeList.filter(p => p.modelId !== modelId);
+            state.accounts[accountName].planeList = filtered;
         } else {
             const normalizedName = planeIdentifier.trim().toLowerCase();
-            state.accounts[accountName].planeList = planeList.filter(p => p.modelName !== normalizedName);
+            const filtered = planeList.filter(p => p.modelName !== normalizedName);
+            state.accounts[accountName].planeList = filtered;
         }
 
         if (state.accounts[accountName].planeList.length === originalLength) {

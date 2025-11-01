@@ -34,14 +34,6 @@ export async function execute(interaction) {
         return interaction.followUp({ content: `Error: Account "${accountName}" not found in \`bot_state.json\`.`, flags: 64 });
     }
     
-    // Ensure account has baseAirports and planeList properties
-    if (!account.baseAirports) {
-        account.baseAirports = {};
-    }
-    if (!account.planeList) {
-        account.planeList = [];
-    }
-    
     console.log('[RUN] Validating state: Checking for baselist and planelist.');
     if (!account.baseAirports || Object.keys(account.baseAirports).length === 0) {
         console.error('[RUN] Error: Baselist is empty.');

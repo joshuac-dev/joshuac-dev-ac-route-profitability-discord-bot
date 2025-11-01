@@ -30,11 +30,6 @@ export async function execute(interaction) {
         });
     }
 
-    // Ensure account has baseAirports property
-    if (!state.accounts[accountName].baseAirports) {
-        state.accounts[accountName].baseAirports = {};
-    }
-
     const baseAirports = state.accounts[accountName].baseAirports;
 
     if (subcommand === 'baselist_view') {
