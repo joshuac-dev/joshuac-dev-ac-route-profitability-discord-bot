@@ -65,7 +65,18 @@ This is a Discord bot for analyzing profitable flight routes in the game Airline
     ```
 6.  Create the state file with default empty state:
     ```bash
-    echo '{ "accounts": { "main": { "username": "your-email@example.com", "password": "your-game-password", "planeList": [], "baseAirports": {} } } }' > bot_state.json
+    cat > bot_state.json << 'EOF'
+{
+  "accounts": {
+    "main": {
+      "username": "your-email@example.com",
+      "password": "your-game-password",
+      "planeList": [],
+      "baseAirports": {}
+    }
+  }
+}
+EOF
     ```
     Make sure the bot has permission to write to this file (`chmod 664 bot_state.json`).
 
