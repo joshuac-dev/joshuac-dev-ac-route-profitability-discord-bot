@@ -41,9 +41,8 @@ export async function loadState(forceRefresh = false) {
         // This provides backward compatibility
         if (stateCache.planeList || stateCache.baseAirports) {
             console.log('[STATE] Detected old format with global planeList/baseAirports. Migration may be needed.');
-            // Only migrate if there are accounts and the old global lists have data
-            const hasGlobalPlaneList = stateCache.planeList && stateCache.planeList.length > 0;
-            const hasGlobalBaseAirports = stateCache.baseAirports && Object.keys(stateCache.baseAirports).length > 0;
+            const hasGlobalPlaneList = stateCache.planeList?.length > 0;
+            const hasGlobalBaseAirports = Object.keys(stateCache.baseAirports || {}).length > 0;
             
             if ((hasGlobalPlaneList || hasGlobalBaseAirports) && Object.keys(stateCache.accounts).length > 0) {
                 console.log('[STATE] Migrating global lists to first account...');
@@ -51,12 +50,12 @@ export async function loadState(forceRefresh = false) {
                 const firstAccount = stateCache.accounts[firstAccountName];
                 
                 // Only migrate if the account doesn't already have these properties
-                if (hasGlobalPlaneList && (!firstAccount.planeList || firstAccount.planeList.length === 0)) {
+                if (hasGlobalPlaneList && !firstAccount.planeList?.length) {
                     firstAccount.planeList = stateCache.planeList;
                     console.log(`[STATE] Migrated planeList (${stateCache.planeList.length} items) to account "${firstAccountName}".`);
                 }
                 
-                if (hasGlobalBaseAirports && (!firstAccount.baseAirports || Object.keys(firstAccount.baseAirports).length === 0)) {
+                if (hasGlobalBaseAirports && !Object.keys(firstAccount.baseAirports || {}).length) {
                     firstAccount.baseAirports = stateCache.baseAirports;
                     console.log(`[STATE] Migrated baseAirports (${Object.keys(stateCache.baseAirports).length} items) to account "${firstAccountName}".`);
                 }

@@ -80,7 +80,7 @@ export async function execute(interaction) {
             return interaction.reply({ content: `Airport ${iata} is not in the baselist for account "${accountName}".`, flags: 64 });
         }
         
-        const { [iata]: removed, ...remainingAirports } = baseAirports;
+        const { [iata]: _, ...remainingAirports } = baseAirports;
         state.accounts[accountName].baseAirports = remainingAirports;
         await saveState(state);
         
