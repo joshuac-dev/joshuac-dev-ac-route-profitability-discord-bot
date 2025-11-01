@@ -55,8 +55,18 @@ client.on('interactionCreate', async interaction => {
         console.error(error);
         try {
             if (interaction.replied || interaction.deferred) {
-                // --- (FIX) Using flags: 64 instead of ephemeral: true ---
-                await interaction.followUp({ content: 'There was an error executing this command!', flags: 64 });
+                // Try followUp first, fall back to channel.send if token expired
+                try {
+                    await interaction.followUp({ content: 'There was an error executing this command!', flags: 64 });
+                } catch (followUpError) {
+                    // If followUp fails (e.g., token expired), use channel.send
+                    if (followUpError.code === 50027) {
+                        console.warn('[WARN] Interaction token expired, using channel.send instead');
+                        await interaction.channel.send('There was an error executing this command!');
+                    } else {
+                        throw followUpError;
+                    }
+                }
             } else {
                 // --- (FIX) Using flags: 64 instead of ephemeral: true ---
                 await interaction.reply({ content: 'There was an error executing this command!', flags: 64 });
