@@ -14,9 +14,7 @@ async function ensureStateFile() {
     } catch (error) {
         // File doesn't exist, create it with default structure
         await fs.writeFile(stateFilePath, JSON.stringify({
-            accounts: {},
-            planeList: [],
-            baseAirports: {}
+            accounts: {}
         }, null, 2), 'utf8');
     }
 }
@@ -38,13 +36,57 @@ export async function loadState(forceRefresh = false) {
         stateCache = JSON.parse(data);
         // Ensure default structure if file is partial
         stateCache.accounts = stateCache.accounts || {};
-        stateCache.planeList = stateCache.planeList || [];
-        stateCache.baseAirports = stateCache.baseAirports || {};
+        
+        // Migration: Move global planeList and baseAirports to account-specific if they exist
+        // This provides backward compatibility
+        if (stateCache.planeList || stateCache.baseAirports) {
+            console.log('[STATE] Detected old format with global planeList/baseAirports. Migration may be needed.');
+            const hasGlobalPlaneList = stateCache.planeList?.length > 0;
+            const hasGlobalBaseAirports = Object.keys(stateCache.baseAirports || {}).length > 0;
+            
+            if ((hasGlobalPlaneList || hasGlobalBaseAirports) && Object.keys(stateCache.accounts).length > 0) {
+                console.log('[STATE] Migrating global lists to first account...');
+                const firstAccountName = Object.keys(stateCache.accounts)[0];
+                const firstAccount = stateCache.accounts[firstAccountName];
+                
+                // Only migrate if the account doesn't already have these properties
+                if (hasGlobalPlaneList && !firstAccount.planeList?.length) {
+                    firstAccount.planeList = stateCache.planeList;
+                    console.log(`[STATE] Migrated planeList (${stateCache.planeList.length} items) to account "${firstAccountName}".`);
+                }
+                
+                if (hasGlobalBaseAirports && !Object.keys(firstAccount.baseAirports || {}).length) {
+                    firstAccount.baseAirports = stateCache.baseAirports;
+                    console.log(`[STATE] Migrated baseAirports (${Object.keys(stateCache.baseAirports).length} items) to account "${firstAccountName}".`);
+                }
+                
+                // Clear the global lists after migration
+                delete stateCache.planeList;
+                delete stateCache.baseAirports;
+                
+                console.log('[STATE] Migration complete. State will be saved on next saveState() call.');
+            } else {
+                // Clean up empty global lists
+                delete stateCache.planeList;
+                delete stateCache.baseAirports;
+            }
+        }
+        
+        // Ensure each account has the required properties
+        for (const accountName of Object.keys(stateCache.accounts)) {
+            if (!stateCache.accounts[accountName].planeList) {
+                stateCache.accounts[accountName].planeList = [];
+            }
+            if (!stateCache.accounts[accountName].baseAirports) {
+                stateCache.accounts[accountName].baseAirports = {};
+            }
+        }
+        
         return stateCache;
     } catch (error) {
         console.error('Failed to load state from bot_state.json:', error);
         // Return default structure on parse error
-        return { accounts: {}, planeList: [], baseAirports: {} };
+        return { accounts: {} };
     }
 }
 
