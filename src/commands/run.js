@@ -64,7 +64,6 @@ export async function execute(interaction) {
             account.password,
             account.baseAirports,
             account.planeList,
-            account.excludeAirports || {},
             isDebug,
             testLimit,
             onProgress

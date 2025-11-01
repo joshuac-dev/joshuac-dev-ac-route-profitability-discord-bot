@@ -388,7 +388,7 @@ export const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 /**
  * Main analysis runner.
  */
-export async function runAnalysis(username, password, baseAirports, userPlaneList, excludeAirports, isDebug, testLimit, onProgress) {
+export async function runAnalysis(username, password, baseAirports, userPlaneList, isDebug, testLimit, onProgress) {
     const client = createApiClient();
     
     await onProgress('Logging in...');
@@ -405,26 +405,20 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
         airportIdLookup.set(airport.id, airport);
     }
     
-    // Filter out excluded airports
-    const excludedIds = new Set(Object.values(excludeAirports));
-    let airportsToScan = allAirports.filter(airport => !excludedIds.has(airport.id));
-    
-    if (excludedIds.size > 0) {
-        console.log(`[ANALYSIS] Excluding ${excludedIds.size} airports from scan.`);
+    // Prepare airports list (apply test limit if needed)
+    let availableAirports = allAirports;
+    if (testLimit > 0 && testLimit < availableAirports.length) {
+        availableAirports = availableAirports.slice(0, testLimit);
+        console.log(`[ANALYSIS] Limiting scan to first ${availableAirports.length} airports.`);
     }
-    
-    if (testLimit > 0 && testLimit < airportsToScan.length) {
-        airportsToScan = airportsToScan.slice(0, testLimit);
-        console.log(`[ANALYSIS] Limiting scan to first ${airportsToScan.length} airports.`);
-    }
-    const totalToScan = airportsToScan.length;
     
     const allResults = new Map();
     const baseIatas = Object.keys(baseAirports);
     let baseIndex = 1;
 
     for (const baseIata of baseIatas) {
-        const fromAirportId = baseAirports[baseIata];
+        const baseObj = typeof baseAirports[baseIata] === 'object' ? baseAirports[baseIata] : { id: baseAirports[baseIata], excludeAirports: {} };
+        const fromAirportId = baseObj.id;
         const fromAirport = airportIdLookup.get(fromAirportId);
         
         if (!fromAirport) {
@@ -432,6 +426,17 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
             await onProgress(`Skipping base ${baseIata}: Not found in airport list.`);
             continue;
         }
+
+        // Filter out airports excluded for this specific base
+        const baseExcludeAirports = baseObj.excludeAirports || {};
+        const excludedIds = new Set(Object.values(baseExcludeAirports));
+        const airportsToScan = availableAirports.filter(airport => !excludedIds.has(airport.id));
+        
+        if (excludedIds.size > 0) {
+            console.log(`[ANALYSIS] Excluding ${excludedIds.size} airports from scan for base ${baseIata}.`);
+        }
+        
+        const totalToScan = airportsToScan.length;
 
         console.log(`[ANALYSIS] === Starting analysis for base: ${baseIata} (${fromAirport.city}) ===`);
         const baseProgress = `(Base ${baseIndex}/${baseIatas.length})`;
