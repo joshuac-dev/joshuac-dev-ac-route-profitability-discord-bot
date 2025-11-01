@@ -80,6 +80,9 @@ export async function loadState(forceRefresh = false) {
             if (!stateCache.accounts[accountName].baseAirports) {
                 stateCache.accounts[accountName].baseAirports = {};
             }
+            if (!stateCache.accounts[accountName].excludeAirports) {
+                stateCache.accounts[accountName].excludeAirports = {};
+            }
         }
         
         return stateCache;

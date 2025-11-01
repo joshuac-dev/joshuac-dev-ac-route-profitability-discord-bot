@@ -388,7 +388,7 @@ export const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 /**
  * Main analysis runner.
  */
-export async function runAnalysis(username, password, baseAirports, userPlaneList, isDebug, testLimit, onProgress) {
+export async function runAnalysis(username, password, baseAirports, userPlaneList, excludeAirports, isDebug, testLimit, onProgress) {
     const client = createApiClient();
     
     await onProgress('Logging in...');
@@ -405,9 +405,16 @@ export async function runAnalysis(username, password, baseAirports, userPlaneLis
         airportIdLookup.set(airport.id, airport);
     }
     
-    let airportsToScan = allAirports;
-    if (testLimit > 0 && testLimit < allAirports.length) {
-        airportsToScan = allAirports.slice(0, testLimit);
+    // Filter out excluded airports
+    const excludedIds = new Set(Object.values(excludeAirports));
+    let airportsToScan = allAirports.filter(airport => !excludedIds.has(airport.id));
+    
+    if (excludedIds.size > 0) {
+        console.log(`[ANALYSIS] Excluding ${excludedIds.size} airports from scan.`);
+    }
+    
+    if (testLimit > 0 && testLimit < airportsToScan.length) {
+        airportsToScan = airportsToScan.slice(0, testLimit);
         console.log(`[ANALYSIS] Limiting scan to first ${airportsToScan.length} airports.`);
     }
     const totalToScan = airportsToScan.length;
