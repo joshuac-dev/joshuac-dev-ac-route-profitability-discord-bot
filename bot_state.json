@@ -4,7 +4,8 @@
       "username": "your-email@example.com",
       "password": "your-game-password",
       "planeList": [],
-      "baseAirports": {}
+      "baseAirports": {},
+      "excludeAirports": {}
     }
   }
 }
