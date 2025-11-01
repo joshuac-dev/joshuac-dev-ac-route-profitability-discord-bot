@@ -59,7 +59,10 @@ export async function execute(interaction) {
                 return interaction.editReply(`Could not find an airport with IATA code ${iata}.`);
             }
             
-            baseAirports[iata] = airport.id;
+            state.accounts[accountName].baseAirports = {
+                ...baseAirports,
+                [iata]: airport.id
+            };
             await saveState(state);
             
             return interaction.editReply(`Added ${iata} (${airport.name}, ${airport.city}) to the baselist for account "${accountName}".`);
@@ -77,7 +80,8 @@ export async function execute(interaction) {
             return interaction.reply({ content: `Airport ${iata} is not in the baselist for account "${accountName}".`, flags: 64 });
         }
         
-        delete baseAirports[iata];
+        const { [iata]: removed, ...remainingAirports } = baseAirports;
+        state.accounts[accountName].baseAirports = remainingAirports;
         await saveState(state);
         
         // --- (FIX) Using flags: 64 instead of ephemeral: true ---
