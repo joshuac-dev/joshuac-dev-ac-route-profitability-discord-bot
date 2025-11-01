@@ -51,8 +51,8 @@ export async function execute(interaction) {
     const onProgress = async (message) => {
         console.log(`[RUN] ${message}`);
         try {
-            // --- (FIX) Using flags: 64 instead of ephemeral: true ---
-            await interaction.followUp({ content: message, flags: 64 });
+            // Use channel.send() to avoid webhook token expiration for long-running operations
+            await interaction.channel.send(message);
         } catch (error) {
             console.warn('[WARN] Discord progress update failed (likely editing too fast).');
         }
@@ -70,8 +70,8 @@ export async function execute(interaction) {
         );
 
         console.log('[RUN] Analysis complete. Posting results to Discord.');
-        // --- (FIX) Using flags: 64 instead of ephemeral: true ---
-        await interaction.followUp({ content: '✅ Analysis complete! Posting results...', flags: 64 });
+        // Use channel.send() to avoid webhook token expiration for long-running operations
+        await interaction.channel.send('✅ Analysis complete! Posting results...');
 
         for (const [baseIata, routes] of results.entries()) {
             if (routes.length === 0) {
@@ -96,7 +96,7 @@ export async function execute(interaction) {
 
     } catch (error) {
         console.error(`[RUN] Analysis failed: ${error.message}`);
-        // --- (FIX) Using flags: 64 instead of ephemeral: true ---
-        await interaction.followUp({ content: `Error during analysis: ${error.message}`, flags: 64 });
+        // Use channel.send() to avoid webhook token expiration for long-running operations
+        await interaction.channel.send(`Error during analysis: ${error.message}`);
     }
 }
